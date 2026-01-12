@@ -3,7 +3,7 @@ PROJS =  chan_quectels.so
 
 chan_quectelm_so_OBJS =  app.o at_command.o at_parse.o at_queue.o at_read.o at_response.o \
 	chan_quectel.o channel.o char_conv.o cli.o helpers.o manager.o \
-	memmem.o ringbuffer.o cpvt.o dc_config.o pdu.o mixbuffer.o pdiscovery.o error.o smsdb.o
+	memmem.o ringbuffer.o cpvt.o dc_config.o pdu.o mixbuffer.o pdiscovery.o error.o smsdb.o sms_queue.o
 
 chan_quectels_so_OBJS = single.o
 
@@ -15,7 +15,7 @@ discovery_OBJS = tools/discovery.o tools/tty.o
 SOURCES = app.c at_command.c at_parse.c at_queue.c at_read.c at_response.c \
 	chan_quectel.c channel.c char_conv.c cli.c cpvt.c dc_config.c helpers.c \
 	manager.c memmem.c ringbuffer.c single.c pdu.c mixbuffer.c pdiscovery.c \
-	error.c smsdb.c
+	error.c smsdb.c sms_queue.c
 
 test_SOURCES = test/test1.c test/parse.c test/gen.c
 tools_SOURCES = tools/discovery.c tools/tty.c
@@ -23,7 +23,7 @@ tools_SOURCES = tools/discovery.c tools/tty.c
 HEADERS = app.h at_command.h at_parse.h at_queue.h at_read.h at_response.h \
 	chan_quectel.h channel.h char_conv.h cli.h cpvt.h dc_config.h export.h \
 	helpers.h manager.h memmem.h ringbuffer.h pdu.h mixbuffer.h pdiscovery.h \
-	mutils.h error.h smsdb.h
+	mutils.h error.h smsdb.h sms_queue.h
 
 tools_HEADERS = tools/tty.h
 

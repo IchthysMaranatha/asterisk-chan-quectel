@@ -71,6 +71,7 @@ ASTERISK_FILE_VERSION(__FILE__, "$Rev: " PACKAGE_REVISION " $")
 #include "dc_config.h"			/* dc_uconfig_fill() dc_gconfig_fill() dc_sconfig_fill()  */
 #include "pdiscovery.h"			/* pdiscovery_lookup() pdiscovery_init() pdiscovery_fini() */
 #include "smsdb.h"
+#include "sms_queue.h"
 #include "error.h"
 #include "errno.h"
 
@@ -1928,6 +1929,7 @@ static int public_state_init(struct public_state * state)
 			if(ast_channel_register(&channel_tech) == 0)
 			{
 				smsdb_init();
+				sms_queue_init();
 				cli_register();
 
 				app_register();
@@ -1993,7 +1995,8 @@ static void public_state_fini(struct public_state * state)
 
 static int unload_module()
 {
-
+	/* stop before devices are destroyed: the SMS worker looks them up */
+	sms_queue_shutdown();
 	public_state_fini(gpublic);
 	pdiscovery_fini();
 
