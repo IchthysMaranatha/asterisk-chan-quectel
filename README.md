@@ -1,5 +1,9 @@
 Channel driver for Quectel and Simcom modules 
 =================================================
+## Notes
+
+This fork includes compatibility fixes for Quectel EC20 modules, including improved call state handling and QTONEDET based DTMF support for IVR applications.
+
 This should work with Quectel modules such as EC20, EC21, EC25, EG9x and Simcom sim7600 and possibly other models with voice over USB capability. Tested with the EC25-E mini-pcie module and Waveshare sim7600 g-h dongle. If the product page of your Quectel module contains the application note Voice over USB and UAC or Voice over UAC, you should be good to go. Praise God! Have been able to integrate ALSA support for UAC mode, steps to use UAC can be found <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/discussions/2">here</a> If using Quectel serial audio port, please ensure gps messages has been turned off with AT+QGPSCFG="outport","none"
 
 Note for Pi users: If using a Pi and especially a device older than Pi4, you will invariably have problems of various kinds if powering the modem using a Pi usb port due to the current limiting circuit (600ma - 1.2A). Even with a Pi 4, you will not be able to stably handle modem devices with a larger power draw (2.1A) than that of the waveshare sim7600 dongle. You will need to provide independent power to the modem without using the Pi usb port which must only be used for data communication. If the modem device is a Pi HAT, you can provide power by stacking and using a beefy power supply. 
@@ -12,9 +16,6 @@ In many modules, when AT^DSCI=1 is set, URC for call status indication is genera
 
 Armed with this knowledge and using AT^DSCI=1 as an intialization command, we can now set up the Huawei ^ORIG URC <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/blob/b6f6a389f2d8cc0b1ba183f6ebe7f140e03730af/at_response.h#L32">here</a> to handle entire call management (initiatiing, connecting in or out, terminating) through code block <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/blob/b6f6a389f2d8cc0b1ba183f6ebe7f140e03730af/at_response.c#L612-L737">here</a> with necessary changes.
 
-## Notes
-
-This fork includes compatibility fixes for Quectel EC20 modules, including improved call state handling and QTONEDET based DTMF support for IVR applications.
 
 ## Quectel EC20
 
