@@ -14,6 +14,9 @@
 
 #include <asterisk/logger.h>			/* ast_debug() */
 #include <asterisk/pbx.h>			/* ast_pbx_start() */
+#include <asterisk/channel.h>
+#include <asterisk/frame.h>
+#include <asterisk/time.h>
 #include <sys/sysinfo.h>
 #include "ast_compat.h"				/* asterisk compatibility fixes */
 
@@ -88,7 +91,102 @@ static void request_clcc(struct pvt* pvt)
 		ast_log(LOG_ERROR, "[%s] Error enqueue List Current Calls request\n", PVT_ID(pvt));
 	}
 }
+static void enable_qtonedet(struct pvt *pvt)
+{
+	static const char cmd_qtonedet[] = "AT+QTONEDET=1\r";
+	static const at_queue_cmd_t cmds[] = {
+		ATQ_CMD_DECLARE_STIT(CMD_USER, cmd_qtonedet, ATQ_CMD_TIMEOUT_MEDIUM, 0),
+	};
 
+	if (at_queue_insert_const(&pvt->sys_chan, cmds, ITEMS_OF(cmds), 1) != 0)
+	{
+		ast_log(LOG_ERROR, "[%s] Error enqueue QTONEDET enable command\n", PVT_ID(pvt));
+	}
+	else
+	{
+		ast_debug(1, "[%s] QTONEDET enable command queued\n", PVT_ID(pvt));
+	}
+}
+static int qtonedet_code_to_digit(int code, char *digit)
+{
+	switch (code)
+	{
+		case 48: *digit = '0'; return 1;
+		case 49: *digit = '1'; return 1;
+		case 50: *digit = '2'; return 1;
+		case 51: *digit = '3'; return 1;
+		case 52: *digit = '4'; return 1;
+		case 53: *digit = '5'; return 1;
+		case 54: *digit = '6'; return 1;
+		case 55: *digit = '7'; return 1;
+		case 56: *digit = '8'; return 1;
+		case 57: *digit = '9'; return 1;
+		case 42: *digit = '*'; return 1;
+		case 35: *digit = '#'; return 1;
+		case 65: *digit = 'A'; return 1;
+		case 66: *digit = 'B'; return 1;
+		case 67: *digit = 'C'; return 1;
+		case 68: *digit = 'D'; return 1;
+	}
+
+	return 0;
+}
+
+static int at_response_qtonedet(struct pvt *pvt, const char *str)
+{
+	int code;
+	char digit;
+	struct cpvt *cpvt;
+	struct ast_frame f;
+	struct timeval now;
+
+	if (sscanf(str, "+QTONEDET: %d", &code) != 1)
+	{
+		ast_debug(1, "[%s] Cannot parse QTONEDET URC '%s'\n", PVT_ID(pvt), str);
+		return 0;
+	}
+
+	if (!qtonedet_code_to_digit(code, &digit))
+	{
+		ast_debug(1, "[%s] QTONEDET status/result code %d ignored\n", PVT_ID(pvt), code);
+		return 0;
+	}
+
+	cpvt = active_cpvt(pvt);
+	if (!cpvt || !cpvt->channel)
+	{
+		ast_debug(1, "[%s] QTONEDET '%c' received but no active channel\n", PVT_ID(pvt), digit);
+		return 0;
+	}
+
+	now = ast_tvnow();
+	if (digit == pvt->dtmf_digit &&
+		!ast_tvzero(pvt->dtmf_end_time) &&
+		ast_tvdiff_ms(now, pvt->dtmf_end_time) < CONF_SHARED(pvt, mindtmfinterval))
+	{
+		ast_debug(1, "[%s] QTONEDET '%c' ignored min interval %d > %ld\n",
+			PVT_ID(pvt), digit, CONF_SHARED(pvt, mindtmfinterval),
+			(long) ast_tvdiff_ms(now, pvt->dtmf_end_time));
+		return 0;
+	}
+
+	memset(&f, 0, sizeof(f));
+	f.frametype = AST_FRAME_DTMF_BEGIN;
+	f.subclass.integer = digit;
+	ast_queue_frame(cpvt->channel, &f);
+
+	memset(&f, 0, sizeof(f));
+	f.frametype = AST_FRAME_DTMF_END;
+	f.subclass.integer = digit;
+	f.len = 100;
+	ast_queue_frame(cpvt->channel, &f);
+
+	pvt->dtmf_digit = digit;
+	pvt->dtmf_end_time = now;
+
+	ast_debug(1, "[%s] QTONEDET code %d queued as DTMF '%c'\n", PVT_ID(pvt), code, digit);
+	return 0;
+}
 static int at_response_rcend (struct pvt * pvt, const char* str)
 {
 	int call_index = 0;
@@ -278,6 +376,7 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 					pvt->initialized = 1;
 					ast_verb (3, "[%s] Quectel initialized and ready\n", PVT_ID(pvt));
 					manager_event_device_status(PVT_ID(pvt), "Initialize");
+					enable_qtonedet(pvt);
 				}
 				break;
 
@@ -312,6 +411,7 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 					pvt->initialized = 1;
 					ast_verb (3, "[%s] Quectel initialized and ready\n", PVT_ID(pvt));
 					manager_event_device_status(PVT_ID(pvt), "Initialize");
+					enable_qtonedet(pvt);
 				}
 				break;
 			case CMD_AT_DDSETEX0:
@@ -2194,6 +2294,11 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 				return -1;
 
 			case RES_UNKNOWN:
+				if (!strncmp(str, "+QTONEDET:", 10))
+				{
+					return at_response_qtonedet(pvt, str);
+				}
+
 				if (ecmd)
 				{
 					switch (ecmd->cmd)

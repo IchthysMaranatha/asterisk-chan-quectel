@@ -1,5 +1,9 @@
 Channel driver for Quectel and Simcom modules 
 =================================================
+## Notes
+
+This fork includes compatibility fixes for Quectel EC20 modules, including improved call state handling and QTONEDET based DTMF support for IVR applications.
+
 This should work with Quectel modules such as EC20, EC21, EC25, EG9x and Simcom sim7600 and possibly other models with voice over USB capability. Tested with the EC25-E mini-pcie module and Waveshare sim7600 g-h dongle. If the product page of your Quectel module contains the application note Voice over USB and UAC or Voice over UAC, you should be good to go. Praise God! Have been able to integrate ALSA support for UAC mode, steps to use UAC can be found <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/discussions/2">here</a> If using Quectel serial audio port, please ensure gps messages has been turned off with AT+QGPSCFG="outport","none"
 
 Note for Pi users: If using a Pi and especially a device older than Pi4, you will invariably have problems of various kinds if powering the modem using a Pi usb port due to the current limiting circuit (600ma - 1.2A). Even with a Pi 4, you will not be able to stably handle modem devices with a larger power draw (2.1A) than that of the waveshare sim7600 dongle. You will need to provide independent power to the modem without using the Pi usb port which must only be used for data communication. If the modem device is a Pi HAT, you can provide power by stacking and using a beefy power supply. 
@@ -12,29 +16,33 @@ In many modules, when AT^DSCI=1 is set, URC for call status indication is genera
 
 Armed with this knowledge and using AT^DSCI=1 as an intialization command, we can now set up the Huawei ^ORIG URC <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/blob/b6f6a389f2d8cc0b1ba183f6ebe7f140e03730af/at_response.h#L32">here</a> to handle entire call management (initiatiing, connecting in or out, terminating) through code block <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/blob/b6f6a389f2d8cc0b1ba183f6ebe7f140e03730af/at_response.c#L612-L737">here</a> with necessary changes.
 
-Simcom was very tricky to get working as there is no proper call termination URC and its serial audio port also does not play well with the chan_dongle code. But thanks to God, was finally able to get it working. Still remains a hack job as call ids cannot be matched for termination. If your call ids are different from 1,2,3 or 4 for outgoing and incoming calls, you'll need to make changes in this block <a href="https://github.com/IchthysMaranatha/asterisk-chan-quectel/blob/08d3bcad0de21f93eaad9652ccb48ecb9b04a8e6/at_response.c#L105-L143">here</a>
 
-Way forward: This <a href="http://laforge.gnumonks.org/blog/20170902-cellular_modems-voice/">justified rant</a> by a professional in the industry points out that the virtual sound card solution is the way voice should be provided. We can already see that in few modules from Quectel, Telit, u-blox, Sierra Wireless etc. With very few changes in code, non-Quectel modules with USB audio can most probably be accommodated. Please get in touch in the discussions thread on this topic if you have such a module.
+## Quectel EC20
 
-Those with problems with chan_mobile with certain bluetooth controllers such as the in built Raspberry Pi one may find a solution <a href="https://blog.maplein.com/2021/09/fix-for-audio-issues-with-asterisk-and.html">here</a>
+Tested with:
 
-Thanks be to the Father of Lights from Whom are all good things.
+- Quectel EC20
+- Asterisk 22
+- FreePBX 17
+- USB Audio Class (UAC)
 
-In these days of great darkness, when truth and justice are outlawed and where believers themselves are greater obstacles than the atheists with their bigotry, hatred, self-righteousness, falsehood and pride you may just find God speaking to you through this random message to Vassula https://ww3.tlig.org/en/the-messages/messages-random/ or a random verse from the bible www.sandersweb.net/bible/verse.php
+Additional changes:
 
-I do not need donations, but if you wish you could donate to the person I've forked this from. Or if so inclined, you could donate here https://bethmyriam.org/ 
+- QTONEDET DTMF event support
+- Improved call state processing
+- Better IVR compatibility
 
 Building:
 ----------
-
+    $ apt install -y build-essential autoconf automake libtool pkg-config asterisk22-devel libasound2-dev libsqlite3-dev
     $ ./bootstrap
-    $ ./configure --with-astversion=16.20
+    $ ./configure --with-astversion=22.8.0 DESTDIR=/usr/lib/x86_64-linux-gnu/asterisk/modules
     $ make
     $ make install
     copy quectel.conf to /etc/asterisk Change context and audio serial port as required
 
 If you run a different version of Asterisk, you'll need to update the
-`16.20` as appropriate, obviously.
+`22.8` as appropriate, obviously.
 
 If you did not `make install` Asterisk in the usual location and configure
 cannot find the asterisk header files in `/usr/include/asterisk`, you may
