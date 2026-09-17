@@ -331,6 +331,96 @@ void test_parse_cmgr()
 }
 
 #/* */
+void test_parse_cds()
+{
+	struct result {
+		int		res;
+		char		* sca;
+		char		* oa;
+		int		mr;
+		int		st;
+		const char	* scts;
+		const char	* dt;
+	};
+	static const struct test_case {
+		const char	* input;
+		struct result 	result;
+	} cases[] = {
+		/* Quectel EC25 (EC25EFAR06A10M4G), SMSC address present, delivered */
+		{ "+CDS: 25\r\n07919700000000F006120B919700000000F2629071118081216290711180912100",
+			{ 0, "+79000000000", "+79000000002", 18, 0x00, "2026-09-17 11:08:18 +03:00", "2026-09-17 11:08:19 +03:00" } },
+		/* Quectel EC25 (EC25EFAR06A15M4G), SMSC address absent (length octet 00), delivered */
+		{ "+CDS: 25\r\n0006510B919700000000F1629071018445216290710184652100",
+			{ 0, "", "+79000000001", 81, 0x00, "2026-09-17 10:48:54 +03:00", "2026-09-17 10:48:56 +03:00" } },
+		/* no space after colon */
+		{ "+CDS:25\r\n0006510B919700000000F1629071018445216290710184652100",
+			{ 0, "", "+79000000001", 81, 0x00, "2026-09-17 10:48:54 +03:00", "2026-09-17 10:48:56 +03:00" } },
+		/* permanent failure, TP-Status 0x46 */
+		{ "+CDS: 25\r\n0006520B919700000000F1629071015565216290710155752146",
+			{ 0, "", "+79000000001", 82, 0x46, "2026-09-17 10:55:56 +03:00", "2026-09-17 10:55:57 +03:00" } },
+		/* missing TPDU length */
+		{ "+CDS: \r\n0006510B919700000000F1629071018445216290710184652100",
+			{ -1, "", "", 0, 0, "", "" } },
+		/* PDU line missing */
+		{ "+CDS: 25",
+			{ -1, "", "", 0, 0, "", "" } },
+		/* announced TPDU length longer than PDU */
+		{ "+CDS: 26\r\n0006510B919700000000F1629071018445216290710184652100",
+			{ -1, "", "", 0, 0, "", "" } },
+	};
+
+	unsigned idx = 0;
+	char * input;
+	struct result result;
+	char oa[200], sca[200], scts[64], dt[64];
+	char msg[4096];
+	size_t msg_len;
+	int tpdu_type;
+	pdu_udh_t udh;
+	const char * msg_str;
+
+	result.oa = oa;
+	result.sca = sca;
+	result.scts = scts;
+	result.dt = dt;
+	for (; idx < ITEMS_OF(cases); ++idx) {
+		int failidx = 0;
+		input = strdup(cases[idx].input);
+		oa[0] = sca[0] = scts[0] = dt[0] = '\0';
+		result.mr = result.st = 0;
+		msg_len = sizeof(msg);
+		pdu_udh_init(&udh);
+
+		fprintf(stderr, "/* %u */ %s(\"%s\")...", idx, "at_parse_cds", input);
+		result.res = at_parse_cds(
+			input, strlen(input), &tpdu_type, sca, sizeof(sca), oa, sizeof(oa), scts, &result.mr, &result.st, dt,
+			msg, &msg_len, &udh);
+
+		if (++failidx && result.res == cases[idx].result.res &&
+		    (result.res != 0 ||
+		    (++failidx && PDUTYPE_MTI(tpdu_type) == PDUTYPE_MTI_SMS_STATUS_REPORT &&
+		     ++failidx && strcmp(result.sca, cases[idx].result.sca) == 0 &&
+		     ++failidx && strcmp(result.oa, cases[idx].result.oa) == 0 &&
+		     ++failidx && result.mr == cases[idx].result.mr &&
+		     ++failidx && result.st == cases[idx].result.st &&
+		     ++failidx && strcmp(result.scts, cases[idx].result.scts) == 0 &&
+		     ++failidx && strcmp(result.dt, cases[idx].result.dt) == 0)))
+		{
+			msg_str = "OK";
+			ok++;
+			failidx = 0;
+		} else {
+			msg_str = "FAIL";
+			faults++;
+		}
+		fprintf(stderr, " = %d ('%s','%s',%d,0x%02x,'%s','%s') [fail@%d]\t%s\n",
+			result.res, result.sca, result.oa, result.mr, result.st, result.scts, result.dt, failidx, msg_str);
+		free(input);
+	}
+	fprintf(stderr, "\n");
+}
+
+#/* */
 void test_parse_cusd()
 {
 	struct result {
@@ -467,6 +557,7 @@ int main()
 	test_parse_cops();
 	test_parse_creg();
 	test_parse_cmti();
+	test_parse_cds();
 	test_parse_cmgr();
 	test_parse_cusd();
 	test_parse_cpin();
