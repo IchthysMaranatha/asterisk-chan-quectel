@@ -109,6 +109,35 @@ How to store your own number:
     quectel cmd quectel0 AT+CPBW=1,\"+123456789\",145
 
 
+SMS delivery reports:
+---------------------
+
+When an SMS is sent with the report flag (`QuectelSendSMS(...,yes,...)` or the
+`Report` header of the `QuectelSendSMS` AMI action), the network answers with an
+SMS-STATUS-REPORT for every part. chan_quectel matches it against the sent
+message and then fires the `report` extension in the device context (variables
+`SMS_REPORT_SUCCESS`, `SMS_REPORT`, `SMS_REPORT_PAYLOAD`, `SMS_REPORT_TS`,
+`SMS_REPORT_DT`) and the `QuectelReport` AMI event (`Type: 1`).
+
+    exten => report,1,Verbose(Delivery report for ${CALLERID(num)}: success=${SMS_REPORT_SUCCESS} status=${SMS_REPORT})
+    exten => report,n,Hangup()
+
+How the report reaches the driver is selected with the `smsreport` option
+(`[defaults]` or per device, default `cds`):
+
+* `smsreport=cds` (default): `AT+CNMI=2,1,0,1,0`, the modem passes the report
+  directly as a `+CDS: <length>` URC followed by the PDU. This is required for
+  Quectel EC25/EG25: they keep status reports in their separate "SR" storage but
+  announce them as `+CDSI: "SM",<index>`, so reading that index from "SM" returns
+  nothing (or an unrelated stored message) and the report used to be lost. See
+  <a href="https://forums.quectel.com/t/sms-delivery-reports-cannot-be-read-from-sim-storage-on-ec25-e-and-eg25-g/36955">this Quectel forum thread</a>.
+* `smsreport=cdsi`: `AT+CNMI=2,1,0,2,0`, the report is stored in the modem,
+  announced with `+CDSI` and read with `AT+CMGR` (the previous behaviour).
+
+If the modem answers `ERROR` to `<ds>=1`, a warning is logged and the device
+continues with `cdsi`, so SMS sending and receiving keep working either way.
+The raw URC is also published as the `QuectelNewCDS` AMI event.
+
 Other CLI commands:
 -------------------
 
