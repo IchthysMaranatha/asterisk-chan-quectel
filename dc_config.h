@@ -44,6 +44,11 @@ typedef enum {
 	DC_DTMF_SETTING_RELAX,
 } dc_dtmf_setting_t;
 
+typedef enum {
+	DC_SMSREPORT_CDS = 0,		/*!< AT+CNMI <ds>=1: status reports delivered to the TE as "+CDS: <len>\r\n<pdu>" */
+	DC_SMSREPORT_CDSI,		/*!< AT+CNMI <ds>=2: status reports stored in the modem, "+CDSI: <mem>,<index>" then AT+CMGR */
+} dc_smsreport_t;
+
 /*
  Config API
  Operations
@@ -82,6 +87,7 @@ typedef struct dc_sconfig
 
 	call_waiting_t		callwaiting;			/*!< enable/disable/auto call waiting CALL_WAITING_AUTO */
 	dc_dtmf_setting_t	dtmf;				/*!< off/inband/relax incoming DTMF detection, default DC_DTMF_SETTING_RELAX */
+	dc_smsreport_t		smsreport;			/*!< cds/cdsi how SMS status reports are received, default DC_SMSREPORT_CDS */
 
 	int			mindtmfgap;			/*!< minimal time in ms from end of previews DTMF and begining of next */
 #define DEFAULT_MINDTMFGAP	45
@@ -130,6 +136,8 @@ typedef struct pvt_config
 
 EXPORT_DECL int dc_dtmf_str2setting(const char * str);
 EXPORT_DECL const char * dc_dtmf_setting2str(dc_dtmf_setting_t dtmf);
+EXPORT_DECL int dc_smsreport_str2setting(const char * str);
+EXPORT_DECL const char * dc_smsreport_setting2str(dc_smsreport_t smsreport);
 EXPORT_DECL void dc_sconfig_fill_defaults(struct dc_sconfig * config);
 EXPORT_DECL void dc_sconfig_fill(struct ast_config * cfg, const char * cat, struct dc_sconfig * config);
 EXPORT_DECL void dc_gconfig_fill(struct ast_config * cfg, const char * cat, struct dc_gconfig * config);

@@ -374,7 +374,6 @@ EXPORT_DEF int at_parse_cmgr(char *str, size_t len, int *tpdu_type, char *sca, s
 	char *marks[STRLEN(delimiters)];
 	char *end;
 	size_t tpdu_length;
-	int16_t msg16_tmp[256];
 
 	if (mark_line(str, delimiters, marks) != ITEMS_OF(marks)) {
 		chan_quectel_err = E_PARSE_CMGR_LINE;
@@ -386,18 +385,98 @@ EXPORT_DEF int at_parse_cmgr(char *str, size_t len, int *tpdu_type, char *sca, s
 	}
 	str = marks[2] + 1;
 
+	return at_parse_sms_pdu(str, tpdu_length, tpdu_type, sca, sca_len, oa, oa_len, scts, mr, st, dt, msg, msg_len, udh);
+}
+
+/*!
+ * \brief Parse a +CDS unsolicited status report (PDU mode)
+ * \param str -- string to parse (null terminated), modified in place
+ * \param len -- string length
+ * \retval  0 success
+ * \retval -1 parse error (chan_quectel_err set)
+ *
+ * The other output parameters are the same as for at_parse_cmgr(); a status
+ * report fills tpdu_type, sca, oa (recipient address), mr, scts, dt and st.
+ */
+EXPORT_DEF int at_parse_cds(char *str, size_t len, int *tpdu_type, char *sca, size_t sca_len, char *oa, size_t oa_len, char *scts, int *mr, int *st, char *dt, char *msg, size_t *msg_len, pdu_udh_t *udh)
+{
+	/*
+	 * +CDS: <TPDU_length><CR><LF>
+	 * SMSC_number_and_TPDU
+	 *
+	 *	sample (SMSC address present)
+	 * +CDS: 25
+	 * 07919700000000F0060B0B919700000000F1629051023294216290510232942100
+	 *
+	 *	sample (SMSC address absent, length octet 00 - Quectel EC25 firmware EC25EFAR06A15M4G)
+	 * +CDS: 25
+	 * 00060B0B919700000000F1629051023294216290510232942100
+	 */
+	char *end;
+	size_t tpdu_length;
+
+	/* skip "+CDS:" */
+	str += 5;
+	len -= 5;
+
+	/* skip leading spaces */
+	while (len > 0 && *str == ' ') {
+		++str;
+		--len;
+	}
+
+	if (len <= 0) {
+		chan_quectel_err = E_PARSE_CMGR_LINE;
+		return -1;
+	}
+
+	tpdu_length = strtol(str, &end, 10);
+	if (tpdu_length <= 0 || end[0] != '\r') {
+		chan_quectel_err = E_INVALID_TPDU_LENGTH;
+		return -1;
+	}
+	str = end + 1;
+	if (str[0] == '\n') {
+		++str;
+	}
+
+	return at_parse_sms_pdu(str, tpdu_length, tpdu_type, sca, sca_len, oa, oa_len, scts, mr, st, dt, msg, msg_len, udh);
+}
+
+/*!
+ * \brief Decode a hex SMSC+TPDU string (SMS-DELIVER or SMS-STATUS-REPORT)
+ * \param str -- null-terminated hex string, decoded in place
+ * \param tpdu_length -- TPDU length announced by the modem (without SMSC part)
+ * \retval  0 success
+ * \retval -1 parse error (chan_quectel_err set)
+ */
+EXPORT_DEF int at_parse_sms_pdu(char *str, size_t tpdu_length, int *tpdu_type, char *sca, size_t sca_len, char *oa, size_t oa_len, char *scts, int *mr, int *st, char *dt, char *msg, size_t *msg_len, pdu_udh_t *udh)
+{
+	int16_t msg16_tmp[256];
+
 	int pdu_length = (unhex(str, str) + 1) / 2;
 	if (pdu_length < 0) {
 		chan_quectel_err = E_MALFORMED_HEXSTR;
 		return -1;
 	}
 	int res, i = 0;
-	res = pdu_parse_sca(str + i, pdu_length - i, sca, sca_len);
-	if (res < 0) {
-		/* tpdu_parse_sca sets chan_quectel_err */
-		return -1;
+	if (pdu_length > 0 && str[0] == 0) {
+		/* no SMSC address (length octet 0): some Quectel firmwares deliver
+		 * +CDS status reports this way (EC25EFAR06A15M4G) while others include
+		 * the SMSC address (EC25EFAR06A10M4G); pdu_parse_sca() would reject
+		 * the empty address with E_INVALID_SCA */
+		if (sca_len > 0) {
+			sca[0] = '\0';
+		}
+		i = 1;
+	} else {
+		res = pdu_parse_sca(str + i, pdu_length - i, sca, sca_len);
+		if (res < 0) {
+			/* tpdu_parse_sca sets chan_quectel_err */
+			return -1;
+		}
+		i += res;
 	}
-	i += res;
 	if (tpdu_length > pdu_length - i) {
 		chan_quectel_err = E_INVALID_TPDU_LENGTH;
 		return -1;

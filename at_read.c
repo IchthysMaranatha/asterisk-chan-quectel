@@ -178,6 +178,20 @@ EXPORT_DEF int at_read_result_iov (const char * dev, int * read_result, struct r
 
 				return iovcnt;
 			}
+			else if (rb_memcmp (rb, "+CDS:", 5) == 0)
+			{
+				/* unsolicited SMS-STATUS-REPORT (AT+CNMI <ds>=1), two lines
+				 * without a trailing OK: "+CDS: <len>\r\n<pdu>\r\n".
+				 * Hand both lines over (up to and including the '\r' of the
+				 * PDU line, like the single-line case); wait for more data
+				 * while the PDU line is incomplete. */
+				ssize_t off = rb_find_nth_crlf (rb, 2);
+				if (off > 0)
+				{
+					*read_result = 0;
+					return rb_read_n_iov (rb, iov, (size_t) off + 1);
+				}
+			}
 			else
 			{
 				iovcnt = rb_read_until_mem_iov (rb, iov, "\r\n", 2);

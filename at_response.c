@@ -515,9 +515,23 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 				log_cmd_response_error(pvt, ecmd, "[%s] Error Supplementary Service Notification activation failed\n", PVT_ID(pvt));
 				goto e_return;
 
+			case CMD_AT_CNMI:
+				if (CONF_SHARED(pvt, smsreport) == DC_SMSREPORT_CDS && !pvt->cnmi_cds_rejected)
+				{
+					/* "AT+CNMI=2,1,0,1,0" (status reports as +CDS) rejected by
+					 * this modem: continue initialization with <ds>=2 (+CDSI),
+					 * SMS must keep working even without delivery reports */
+					pvt->cnmi_cds_rejected = 1;
+					ast_log (LOG_WARNING, "[%s] AT+CNMI with <ds>=1 (+CDS status reports) rejected, falling back to <ds>=2 (+CDSI) - delivery reports may be lost, consider smsreport=cdsi\n", PVT_ID(pvt));
+					if (at_enqueue_initialization(task->cpvt, CMD_AT_CNMI) == 0)
+					{
+						break;
+					}
+					log_cmd_response_error(pvt, ecmd, "[%s] Error schedule initialization commands\n", PVT_ID(pvt));
+				}
+				/* fall through */
 			case CMD_AT_CMGF:
 			case CMD_AT_CPMS:
-			case CMD_AT_CNMI:
 				ast_debug (1, "[%s] Command '%s' failed\n", PVT_ID(pvt), at_cmd2str (ecmd->cmd));
 				ast_debug (1, "[%s] No SMS support\n", PVT_ID(pvt));
 
@@ -1487,6 +1501,94 @@ static int at_response_cdsi (struct pvt* pvt, const char* str)
 }
 
 /*!
+ * \brief Process a decoded SMS-STATUS-REPORT (from +CMGR or +CDS)
+ * \param pvt -- pvt structure
+ * \param oa -- recipient address the report refers to
+ * \param mr -- message reference of the reported SMS-SUBMIT part
+ * \param st -- TP-Status
+ * \param scts -- service centre time stamp
+ * \param dt -- discharge time
+ *
+ * Matches the part in smsdb; when all parts of the message are reported,
+ * fires the "report" local channel and the QuectelReport AMI event (Type 1).
+ */
+static void at_handle_status_report (struct pvt* pvt, const char *oa, int mr, int st, const char *scts, const char *dt)
+{
+	char payload[SMSDB_PAYLOAD_MAX_LEN];
+	ssize_t payload_len;
+	int status_report[256];
+
+	ast_verb(1, "[%s] Got status report with ref %d from %s and status code %d\n", PVT_ID(pvt), mr, oa, st);
+	payload_len = smsdb_outgoing_part_status(pvt->imsi, oa, mr, st, status_report, payload);
+	if (payload_len >= 0) {
+		int success = 1;
+		char status_report_str[255 * 4 + 1];
+		int srroff = 0;
+		for (int i = 0; status_report[i] != -1; ++i) {
+			success &= !(status_report[i] & 0x40);
+			sprintf(status_report_str + srroff, "%03d,", status_report[i]);
+			srroff += 4;
+		}
+		status_report_str[srroff] = '\0';
+		ast_verb(1, "[%s] Success: %d; Payload: %.*s; Report string: %s\n", PVT_ID(pvt), success, (int) payload_len, payload, status_report_str);
+		payload[payload_len] = '\0';
+		channel_var_t vars[] =
+		{
+			{ "SMS_REPORT_PAYLOAD", payload } ,
+			{ "SMS_REPORT_TS", (char*) scts },
+			{ "SMS_REPORT_DT", (char*) dt },
+			{ "SMS_REPORT_SUCCESS", success ? "1" : "0" },
+			{ "SMS_REPORT_TYPE", "e" },
+			{ "SMS_REPORT", status_report_str },
+			{ NULL, NULL },
+		};
+		start_local_channel(pvt, "report", oa, vars);
+		manager_event_report(PVT_ID(pvt), payload, payload_len, scts, dt, success, 1, status_report_str);
+	} else {
+		ast_debug (1, "[%s] Status report ref %d for %s does not match a pending outgoing part (already reported, expired or not ours)\n", PVT_ID(pvt), mr, oa);
+	}
+}
+
+/*!
+ * \brief Handle +CDS unsolicited status report (AT+CNMI <ds>=1, smsreport=cds)
+ * \param pvt -- pvt structure
+ * \param str -- "+CDS: <len>\r\n<pdu>" (null terminated), modified in place
+ * \param len -- string length
+ * \retval  0 always (a malformed report must not disconnect the device)
+ */
+
+static int at_response_cds (struct pvt* pvt, char * str, size_t len)
+{
+	char		oa[512] = "", sca[512] = "";
+	char		scts[64] = "", dt[64] = "";
+	int		mr = 0, st = 0;
+	char		msg[4096];
+	size_t		msg_len = sizeof(msg);
+	int		tpdu_type = 0;
+	pdu_udh_t	udh;
+	pdu_udh_init(&udh);
+
+	if (CONF_SHARED(pvt, disablesms))
+	{
+		ast_log (LOG_WARNING, "[%s] SMS reception has been disabled in the configuration.\n", PVT_ID(pvt));
+		return 0;
+	}
+
+	manager_event_message("QuectelNewCDS", PVT_ID(pvt), str);
+
+	if (at_parse_cds(str, len, &tpdu_type, sca, sizeof(sca), oa, sizeof(oa), scts, &mr, &st, dt, msg, &msg_len, &udh) < 0) {
+		ast_log(LOG_WARNING, "[%s] Error parsing status report: %s\n", PVT_ID(pvt), error2str(chan_quectel_err));
+		return 0;
+	}
+	if (PDUTYPE_MTI(tpdu_type) != PDUTYPE_MTI_SMS_STATUS_REPORT) {
+		ast_log(LOG_WARNING, "[%s] +CDS carries a non status-report PDU (type 0x%02x), ignoring\n", PVT_ID(pvt), tpdu_type);
+		return 0;
+	}
+	at_handle_status_report(pvt, oa, mr, st, scts, dt);
+	return 0;
+}
+
+/*!
  * \brief Handle +CMGR response
  * \param pvt -- pvt structure
  * \param str -- string containing response (null terminated)
@@ -1510,10 +1612,6 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 	char fullmsg[160 * 255];
 	int fullmsg_len;
 	int csms_cnt;
-	char buf[512];
-	char payload[SMSDB_PAYLOAD_MAX_LEN];
-	ssize_t payload_len;
-	int status_report[256];
 
 	const struct at_queue_cmd * ecmd = at_queue_head_cmd(pvt);
 
@@ -1529,34 +1627,7 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 			}
 			switch (PDUTYPE_MTI(tpdu_type)) {
 			case PDUTYPE_MTI_SMS_STATUS_REPORT:
-				ast_verb(1, "[%s] Got status report with ref %d from %s and status code %d\n", PVT_ID(pvt), mr, oa, st);
-				snprintf(buf, 64, "Delivered\r\nForeignID: %d", mr);
-				payload_len = smsdb_outgoing_part_status(pvt->imsi, oa, mr, st, status_report, payload);
-				if (payload_len >= 0) {
-					int success = 1;
-					char status_report_str[255 * 4 + 1];
-					int srroff = 0;
-					for (int i = 0; status_report[i] != -1; ++i) {
-						success &= !(status_report[i] & 0x40);
-						sprintf(status_report_str + srroff, "%03d,", status_report[i]);
-						srroff += 4;
-					}
-					status_report_str[srroff] = '\0';
-					ast_verb(1, "[%s] Success: %d; Payload: %.*s; Report string: %s\n", PVT_ID(pvt), success, (int) payload_len, payload, status_report_str);
-					payload[payload_len] = '\0';
-					channel_var_t vars[] =
-					{
-						{ "SMS_REPORT_PAYLOAD", payload } ,
-						{ "SMS_REPORT_TS", scts },
-						{ "SMS_REPORT_DT", dt },
-						{ "SMS_REPORT_SUCCESS", success ? "1" : "0" },
-						{ "SMS_REPORT_TYPE", "e" },
-						{ "SMS_REPORT", status_report_str },
-						{ NULL, NULL },
-					};
-					start_local_channel(pvt, "report", oa, vars);
-					manager_event_report(PVT_ID(pvt), payload, payload_len, scts, dt, success, 1, status_report_str);
-				}
+				at_handle_status_report(pvt, oa, mr, st, scts, dt);
 				break;
 			case PDUTYPE_MTI_SMS_DELIVER:
 				ast_debug (1, "[%s] Successfully read SM\n", PVT_ID(pvt));
@@ -2143,6 +2214,8 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 */
 			case RES_CDSI:
 				return at_response_cdsi (pvt, str);
+			case RES_CDS:
+				return at_response_cds (pvt, str, len);
 			case RES_CMTI:
 				return at_response_cmti (pvt, str);
 

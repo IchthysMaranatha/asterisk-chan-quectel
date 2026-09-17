@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "mixbuffer.h"
 #include "helpers.h"
 
@@ -96,8 +97,58 @@ void test_suite1()
 }
 
 #/* */
+int test_rb_find_nth_crlf()
+{
+	/* two-line "+CDS: <len>\r\n<pdu>\r\n" URC, see at_read_result_iov() */
+	static const struct test_case {
+		const char	* data;
+		size_t		start;		/* read position, to test wrapping around the end of the buffer */
+		unsigned	n;
+		ssize_t		result;
+	} cases[] = {
+		{ "+CDS: 25\r\nABCDEF\r\n",			 0, 2, 16 },	/* two complete lines */
+		{ "+CDS: 25\r\nABCDEF\r\n",			 0, 1,  8 },	/* first terminator */
+		{ "+CDS: 25\r\nABCDEF\r\n",			58, 2, 16 },	/* wrapped around the end of the ring */
+		{ "+CDS: 25\r\nABC",				 0, 2, -1 },	/* PDU line incomplete */
+		{ "+CDS: 25\r\nABCDEF\r",			 0, 2, -1 },	/* only the '\r' of the PDU line arrived */
+		{ "+CDS: 25\r\nABCDEF\r\n\r\n+CMTI: \"SM\",0\r\n",	 0, 2, 16 },	/* next URC already buffered, stop at 2nd terminator */
+		{ "",						 0, 1, -1 },
+	};
+	char buffer[64];
+	struct ringbuffer rb;
+	unsigned idx;
+	int faults = 0;
+
+	fprintf(stderr, "Testing rb_find_nth_crlf()\n");
+	for(idx = 0; idx < ITEMS_OF(cases); idx++)
+	{
+		size_t len = strlen(cases[idx].data);
+		size_t i;
+		ssize_t res;
+
+		memset(buffer, 'X', sizeof(buffer));
+		rb_init(&rb, buffer, sizeof(buffer));
+		rb.read = rb.write = cases[idx].start;
+		for(i = 0; i < len; i++)
+			buffer[(cases[idx].start + i) % sizeof(buffer)] = cases[idx].data[i];
+		rb.used = len;
+		rb.write = (cases[idx].start + len) % sizeof(buffer);
+
+		res = rb_find_nth_crlf(&rb, cases[idx].n);
+		fprintf(stderr, "/* %u */ rb_find_nth_crlf(start %2u, n %u) = %3d\t%s\n", idx, (unsigned)cases[idx].start, cases[idx].n, (int)res, res == cases[idx].result ? "OK" : "FAIL");
+		if(res != cases[idx].result)
+			faults++;
+	}
+	fprintf(stderr, "\n");
+	return faults;
+}
+
+#/* */
 int main()
 {
 	test_suite1();
+	if (test_rb_find_nth_crlf()) {
+		return 1;
+	}
 	return 0;
 }

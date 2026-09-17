@@ -203,6 +203,7 @@ typedef struct pvt
 #define VOLUME_SYNC_DONE	3
 
 	unsigned int		has_sms:1;			/*!< device has SMS support */
+	unsigned int		cnmi_cds_rejected:1;		/*!< AT+CNMI <ds>=1 (+CDS status reports) rejected by device, using <ds>=2 (+CDSI) */
 	unsigned int		has_voice:1;			/*!< device has voice call support */
 	unsigned int		is_simcom:1;			/*!< device is a simcom module */
         long                    t0;

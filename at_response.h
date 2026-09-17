@@ -25,6 +25,7 @@ struct iovec;
 	_( CMS_ERROR,   "+CMS ERROR",   "+CMS ERROR:") \
 	_( CMTI,        "+CMTI",        "+CMTI:") \
 	_( CDSI,        "+CDSI",        "+CDSI:") \
+	_( CDS,         "+CDS",         "+CDS:") \
 \
 	_( CNUM,        "+CNUM",        "+CNUM:") \
 		/* and "ERROR+CNUM:", hacked later on */ \

@@ -136,7 +136,17 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 	static const char cmd21[] = "AT+CSCS=\"UCS2\"\r";
 
 	static const char cmd22[] = "AT+CPMS=\"SM\",\"SM\",\"SM\"\r";
-	static const char cmd23[] = "AT+CNMI=2,1,0,2,0\r";
+	/* <ds>=1 (smsreport=cds, default): SMS-STATUS-REPORTs are routed to the TE
+	 * directly as "+CDS: <len>\r\n<pdu>", see at_response_cds().
+	 * <ds>=2 (smsreport=cdsi): status reports are stored in the modem and
+	 * announced with "+CDSI: <mem>,<index>", then read with AT+CMGR.
+	 * Quectel EC25/EG25 keep status reports in their separate "SR" storage
+	 * but announce "+CDSI: "SM",0" - AT+CMGR on "SM" then reads nothing (or
+	 * an unrelated stored message), so with <ds>=2 the delivery reports were
+	 * silently lost on these modules. Modems answering ERROR to <ds>=1 fall
+	 * back to <ds>=2, see at_response_error(). */
+	static const char cmd23[] = "AT+CNMI=2,1,0,1,0\r";
+	static const char cmd23a[] = "AT+CNMI=2,1,0,2,0\r";
 	static const char cmd24[] = "AT+CSQ\r";
 
 	static const at_queue_cmd_t st_cmds[] = {
@@ -203,6 +213,12 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 			if(err)
 				goto failure;
 			ptmp1 = cmds[out].data;
+		}
+		if(cmds[out].cmd == CMD_AT_CNMI && (CONF_SHARED(pvt, smsreport) == DC_SMSREPORT_CDSI || pvt->cnmi_cds_rejected))
+		{
+			/* legacy +CDSI status report indication */
+			cmds[out].data = (char*)cmd23a;
+			cmds[out].length = STRLEN(cmd23a);
 		}
 		if(cmds[out].cmd == from_command)
 			begin = out;

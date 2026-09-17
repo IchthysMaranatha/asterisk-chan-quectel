@@ -26,6 +26,18 @@ EXPORT_DEF const char * dc_dtmf_setting2str(dc_dtmf_setting_t dtmf)
 	return enum2str(dtmf, dtmf_values, ITEMS_OF(dtmf_values));
 }
 
+static const char * const smsreport_values[] = { "cds", "cdsi" };
+
+EXPORT_DEF int dc_smsreport_str2setting(const char * value)
+{
+	return str2enum(value, smsreport_values, ITEMS_OF(smsreport_values));
+}
+
+EXPORT_DEF const char * dc_smsreport_setting2str(dc_smsreport_t smsreport)
+{
+	return enum2str(smsreport, smsreport_values, ITEMS_OF(smsreport_values));
+}
+
 #/* assume config is zerofill */
 static int dc_uconfig_fill(struct ast_config * cfg, const char * cat, struct dc_uconfig * config)
 {
@@ -97,6 +109,7 @@ EXPORT_DEF void dc_sconfig_fill_defaults(struct dc_sconfig * config)
 	config->initstate		= DEV_STATE_STARTED;
 	config->callwaiting 		= CALL_WAITING_AUTO;
 	config->dtmf			= DC_DTMF_SETTING_RELAX;
+	config->smsreport		= DC_SMSREPORT_CDS;
 
 	config->mindtmfgap		= DEFAULT_MINDTMFGAP;
 	config->mindtmfduration		= DEFAULT_MINDTMFDURATION;
@@ -197,6 +210,14 @@ EXPORT_DEF void dc_sconfig_fill(struct ast_config * cfg, const char * cat, struc
 				config->dtmf = val;
 			else
 				ast_log(LOG_ERROR, "Invalid value for 'dtmf': '%s', setting default 'relax'\n", v->value);
+		}
+		else if (!strcasecmp (v->name, "smsreport"))
+		{
+			int val = dc_smsreport_str2setting(v->value);
+			if(val >= 0)
+				config->smsreport = val;
+			else
+				ast_log(LOG_ERROR, "Invalid value for 'smsreport': '%s', must be one of 'cds' 'cdsi' default is 'cds'\n", v->value);
 		}
 		else if (!strcasecmp (v->name, "mindtmfgap"))
 		{
