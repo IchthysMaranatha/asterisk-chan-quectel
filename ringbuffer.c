@@ -227,6 +227,25 @@ EXPORT_DEF int rb_read_until_mem_iov (const struct ringbuffer* rb, struct iovec 
 	return 0;
 }
 
+EXPORT_DEF ssize_t rb_find_nth_crlf (const struct ringbuffer* rb, unsigned n)
+{
+	size_t	i;
+	int	prev_cr = 0;
+
+	for (i = 0; i < rb->used; ++i)
+	{
+		char c = ((const char*) rb->buffer)[(rb->read + i) % rb->size];
+
+		if (prev_cr && c == '\n' && --n == 0)
+		{
+			return (ssize_t) (i - 1);
+		}
+		prev_cr = (c == '\r');
+	}
+
+	return -1;
+}
+
 EXPORT_DEF size_t rb_read_upd (struct ringbuffer* rb, size_t len)
 {
 	size_t s;

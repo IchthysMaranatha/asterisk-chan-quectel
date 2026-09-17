@@ -55,6 +55,9 @@ EXPORT_DECL int rb_read_n_iov (const struct ringbuffer* rb, struct iovec* iov, s
 EXPORT_DECL int rb_read_until_char_iov (const struct ringbuffer*, struct iovec iov[2], char);
 EXPORT_DECL int rb_read_until_mem_iov (const struct ringbuffer*, struct iovec iov[2], const void*, size_t);
 
+/*!< offset (from read position) of the n-th "\r\n" in buffered data or -1 if fewer than n line terminators are buffered */
+EXPORT_DECL ssize_t rb_find_nth_crlf (const struct ringbuffer* rb, unsigned n);
+
 /*!< advice read position to len bytes */
 EXPORT_DECL size_t rb_read_upd (struct ringbuffer* rb, size_t len);
 

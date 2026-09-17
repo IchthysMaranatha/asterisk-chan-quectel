@@ -462,6 +462,7 @@ static void disconnect_quectel (struct pvt* pvt)
 
 		pvt->gsm_registered	= 0;
 		pvt->has_sms = 0;
+		pvt->cnmi_cds_rejected = 0;
 		pvt->has_voice = 0;
 		pvt->has_call_waiting = 0;
 	}
