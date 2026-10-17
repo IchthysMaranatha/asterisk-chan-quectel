@@ -162,6 +162,8 @@ typedef struct pvt
 	char			dtmf_digit;			/*!< last DTMF digit */
 	struct timeval		dtmf_begin_time;		/*!< time of begin of last DTMF digit */
 	struct timeval		dtmf_end_time;			/*!< time of end of last DTMF digit */
+	char			module_dtmf_digit;		/*!< last digit reported by module +QTONEDET */
+	struct timeval		module_dtmf_time;		/*!< time of last +QTONEDET report */
 
 	int			timeout;			/*!< used to set the timeout for data */
 #define DATA_READ_TIMEOUT	10000				/* 10 seconds */

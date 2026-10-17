@@ -1024,6 +1024,9 @@ EXPORT_DEF void pvt_on_create_1st_channel(struct pvt* pvt)
 	pvt->dtmf_begin_time.tv_usec = 0;
 	pvt->dtmf_end_time.tv_sec = 0;
 	pvt->dtmf_end_time.tv_usec = 0;
+	pvt->module_dtmf_digit = 0;
+	pvt->module_dtmf_time.tv_sec = 0;
+	pvt->module_dtmf_time.tv_usec = 0;
 
 	manager_event_device_status(PVT_ID(pvt), "Used");
 }

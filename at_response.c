@@ -372,6 +372,9 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 					pvt->volume_sync_step = VOLUME_SYNC_BEGIN;
 				}
 				break;
+			case CMD_AT_QTONEDET:
+				ast_debug (1, "[%s] Module DTMF detection enabled\n", PVT_ID(pvt));
+				break;
 			case CMD_USER:
 				break;
 			default:
@@ -645,6 +648,10 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 
 			case CMD_AT_DTMF:
 				log_cmd_response_error(pvt, ecmd, "[%s] Error sending DTMF\n", PVT_ID(pvt));
+				break;
+
+			case CMD_AT_QTONEDET:
+				log_cmd_response_error(pvt, ecmd, "[%s] Enabling module DTMF detection failed\n", PVT_ID(pvt));
 				break;
 
 			case CMD_AT_COPS:
@@ -2012,6 +2019,47 @@ static void at_response_busy(struct pvt* pvt, enum ast_control_frame_type contro
 }
 
 /*!
+ * \brief Handle +QTONEDET response: DTMF tone detected by the module
+ * \param pvt -- pvt structure
+ * \param str -- string containing response (null terminated)
+ * \retval  0 success, errors here are not fatal
+ *
+ * Events are "+QTONEDET: <ASCII code of digit>", e.g. "+QTONEDET: 48" for '0'.
+ * The reply to AT+QTONEDET? is "+QTONEDET: <enable>,<mode>" and is not a tone.
+ */
+
+static int at_response_qtonedet (struct pvt* pvt, const char* str)
+{
+	const char* p = str + STRLEN("+QTONEDET:");
+	char* end;
+	long code;
+
+	code = strtol (p, &end, 10);
+	while (*end == ' ' || *end == '\r' || *end == '\n')
+		end++;
+	if (end == p || *end != '\0')
+	{
+		ast_debug (1, "[%s] QTONEDET status '%s'\n", PVT_ID(pvt), str);
+		return 0;
+	}
+
+	if (!((code >= '0' && code <= '9') || (code >= 'A' && code <= 'D') || code == '*' || code == '#'))
+	{
+		ast_log (LOG_WARNING, "[%s] Ignoring unexpected QTONEDET code %ld\n", PVT_ID(pvt), code);
+		return 0;
+	}
+
+	if (!CONF_SHARED(pvt, moduledtmf))
+	{
+		ast_debug (1, "[%s] Module DTMF %c ignored, moduledtmf is off\n", PVT_ID(pvt), (char) code);
+		return 0;
+	}
+
+	queue_module_dtmf (pvt, (char) code);
+	return 0;
+}
+
+/*!
  * \brief Do response
  * \param pvt -- pvt structure
  * \param iovcnt -- number of elements array pvt->d_read_iov
@@ -2161,6 +2209,9 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 
 			case RES_CCWA:
 				return at_response_ccwa (pvt, str);
+
+			case RES_QTONEDET:
+				return at_response_qtonedet (pvt, str);
 
 			case RES_BUSY:
 				ast_log (LOG_ERROR, "[%s] Receive BUSY\n", PVT_ID(pvt));

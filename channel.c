@@ -42,6 +42,17 @@
 
 static char silence_frame[FRAME_SIZE];
 
+/* same digit from module +QTONEDET and from inband DSP within this time is one key press */
+#define MODULE_DTMF_DSP_WINDOW	1000
+
+static int module_dtmf_recent(const struct pvt * pvt, int digit)
+{
+	return CONF_SHARED(pvt, moduledtmf)
+		&& digit == pvt->module_dtmf_digit
+		&& !ast_tvzero(pvt->module_dtmf_time)
+		&& ast_tvdiff_ms(ast_tvnow(), pvt->module_dtmf_time) < MODULE_DTMF_DSP_WINDOW;
+}
+
 #/* */
 static int parse_dial_string(char * dialstr, const char** number, int * opts)
 {
@@ -795,6 +806,12 @@ static struct ast_frame* channel_read (struct ast_channel* channel)
 						f->frametype = AST_FRAME_NULL;
 						f->subclass_integer = 0;
 					}
+					else if(module_dtmf_recent(pvt, f->subclass_integer))
+					{
+						ast_debug(1, "[%s] DTMF char %c ignored, already reported by module\n", PVT_ID(pvt), f->subclass_integer);
+						f->frametype = AST_FRAME_NULL;
+						f->subclass_integer = 0;
+					}
 					else
 					{
 						ast_debug(1, "[%s] Got DTMF char %c\n",PVT_ID(pvt), f->subclass_integer);
@@ -927,6 +944,12 @@ e_return:
 						ast_tvdiff_ms(ast_tvnow(), pvt->dtmf_end_time) < CONF_SHARED(pvt, mindtmfinterval))
 					{
 						ast_debug(1, "[%s] DTMF char %c ignored min interval %d > %ld\n", PVT_ID(pvt), p->subclass_integer, CONF_SHARED(pvt, mindtmfinterval), (long)ast_tvdiff_ms(ast_tvnow(), pvt->dtmf_end_time));
+						p->frametype = AST_FRAME_NULL;
+						p->subclass_integer = 0;
+					}
+					else if(module_dtmf_recent(pvt, p->subclass_integer))
+					{
+						ast_debug(1, "[%s] DTMF char %c ignored, already reported by module\n", PVT_ID(pvt), p->subclass_integer);
 						p->frametype = AST_FRAME_NULL;
 						p->subclass_integer = 0;
 					}
@@ -1579,6 +1602,46 @@ EXPORT_DEF int queue_control_channel (struct cpvt * cpvt, enum ast_control_frame
 	}
 */
 	return 0;
+}
+
+/* NOTE: like queue_control_channel(): called from device level with pvt locked, ast_queue_frame() locks the channel itself */
+EXPORT_DEF void queue_module_dtmf (struct pvt * pvt, char digit)
+{
+	struct cpvt * cpvt;
+	struct timeval now = ast_tvnow();
+	long since = ast_tvzero(pvt->module_dtmf_time) ? -1 : (long) ast_tvdiff_ms(now, pvt->module_dtmf_time);
+	int repeat = digit == pvt->module_dtmf_digit && since >= 0 && since < CONF_SHARED(pvt, mindtmfinterval);
+
+	/* a held key may be reported more than once, so the interval is counted from the last report */
+	pvt->module_dtmf_digit = digit;
+	pvt->module_dtmf_time = now;
+
+	if (repeat)
+	{
+		ast_debug(1, "[%s] Module DTMF %c ignored min interval %d > %ld\n", PVT_ID(pvt), digit, CONF_SHARED(pvt, mindtmfinterval), since);
+		return;
+	}
+	if (digit == pvt->dtmf_digit && !ast_tvzero(pvt->dtmf_end_time) && ast_tvdiff_ms(now, pvt->dtmf_end_time) < MODULE_DTMF_DSP_WINDOW)
+	{
+		ast_debug(1, "[%s] Module DTMF %c ignored, already detected inband\n", PVT_ID(pvt), digit);
+		return;
+	}
+
+	AST_LIST_TRAVERSE(&pvt->chans, cpvt, entry)
+	{
+		if (CPVT_IS_ACTIVE(cpvt) && cpvt->channel)
+			break;
+	}
+	if (!cpvt)
+	{
+		ast_debug(1, "[%s] Module DTMF %c ignored, no active call\n", PVT_ID(pvt), digit);
+		return;
+	}
+
+	struct ast_frame f = { .frametype = AST_FRAME_DTMF_END, .subclass.integer = digit, .len = 100, .src = AST_MODULE };
+
+	ast_verb(3, "[%s] Got module DTMF %c for call idx %d\n", PVT_ID(pvt), digit, cpvt->call_idx);
+	ast_queue_frame(cpvt->channel, &f);
 }
 
 /* NOTE: bg: hmm ast_queue_hangup() say no need channel lock before call, trylock got deadlock up to 30 seconds here */

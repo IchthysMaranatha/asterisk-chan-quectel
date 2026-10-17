@@ -132,6 +132,7 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 	static const char cmd17a[] = "AT+CPCMREG?\r";
 //	static const char cmd18[] = "AT+CLIP=0\r";
 	static const char cmd19[] = "AT+CSSN=1,1\r";
+	static const char cmd19a[] = "AT+QTONEDET=1\r";
 	static const char cmd20[] = "AT+CMGF=0\r";
 	static const char cmd21[] = "AT+CSCS=\"UCS2\"\r";
 
@@ -163,6 +164,7 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSCA, cmd6),		/* Get SMS Service center address */
 //		ATQ_CMD_DECLARE_ST(CMD_AT_CLIP, cmd18),		/* disable  Calling line identification presentation in unsolicited response +CLIP: <number>,<type>[,<subaddr>,<satype>[,[<alpha>][,<CLI validitity>]] */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSSN, cmd19),		/* activate Supplementary Service Notification with CSSI and CSSU */
+		ATQ_CMD_DECLARE_STI(CMD_AT_QTONEDET, cmd19a),	/* optional, report DTMF detected by module as +QTONEDET, not saved by module */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CMGF, cmd20),		/* Set Message Format */
 
  		ATQ_CMD_DECLARE_STI(CMD_AT_CSCS, cmd21),	/* UCS-2 text encoding */
@@ -193,6 +195,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 		if(st_cmds[in].cmd == CMD_AT_Z && !CONF_SHARED(pvt, resetquectel))
 			continue;
 		if(st_cmds[in].cmd == CMD_AT_U2DIAG && CONF_SHARED(pvt, u2diag) == -1)
+			continue;
+		if(st_cmds[in].cmd == CMD_AT_QTONEDET && !CONF_SHARED(pvt, moduledtmf))
 			continue;
 
 		memcpy(&cmds[out], &st_cmds[in], sizeof(st_cmds[in]));
