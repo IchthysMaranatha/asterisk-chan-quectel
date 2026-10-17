@@ -169,6 +169,20 @@ EXPORT_DEF void dc_sconfig_fill(struct ast_config * cfg, const char * cat, struc
 		{
 			config->resetquectel = ast_true (v->value);		/* resetquectel is set to 0 if invalid */
 		}
+		else if (!strcasecmp (v->name, "qmic"))
+		{
+			unsigned txgain, txdgain;
+			char end;
+
+			config->qmic[0] = '\0';
+			if (v->value[0] != '\0')
+			{
+				if (sscanf (v->value, "%u,%u%c", &txgain, &txdgain, &end) == 2 && txgain <= 65535 && txdgain <= 65535)
+					snprintf (config->qmic, sizeof (config->qmic), "%u,%u", txgain, txdgain);
+				else
+					ast_log(LOG_ERROR, "Invalid value for 'qmic' '%s', expected <txgain>,<txdgain> in 0-65535, not set\n", v->value);
+			}
+		}
 		else if (!strcasecmp (v->name, "disablesms"))
 		{
 			config->disablesms = ast_true (v->value);		/* disablesms is set to 0 if invalid */

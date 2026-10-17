@@ -77,6 +77,7 @@ typedef struct dc_sconfig
 	unsigned int		autodeletesms:1;		/*! 0 */
 	unsigned int		resetquectel:1;			/*! 1 */
 	unsigned int		disablesms:1;			/*! 0 */
+	char			qmic[16];			/*!< "<txgain>,<txdgain>" sent as AT+QMIC on device initialization, empty = not sent */
 	dev_state_t		initstate;			/*! DEV_STATE_STARTED */
 //	unsigned int		disable:1;			/*! 0 */
 

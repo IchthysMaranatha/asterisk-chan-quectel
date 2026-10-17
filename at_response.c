@@ -372,6 +372,9 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 					pvt->volume_sync_step = VOLUME_SYNC_BEGIN;
 				}
 				break;
+			case CMD_AT_QMIC:
+				ast_debug (1, "[%s] Uplink mic gains set\n", PVT_ID(pvt));
+				break;
 			case CMD_USER:
 				break;
 			default:
@@ -645,6 +648,10 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 
 			case CMD_AT_DTMF:
 				log_cmd_response_error(pvt, ecmd, "[%s] Error sending DTMF\n", PVT_ID(pvt));
+				break;
+
+			case CMD_AT_QMIC:
+				log_cmd_response_error(pvt, ecmd, "[%s] Setting uplink mic gains failed\n", PVT_ID(pvt));
 				break;
 
 			case CMD_AT_COPS:

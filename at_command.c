@@ -163,6 +163,7 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSCA, cmd6),		/* Get SMS Service center address */
 //		ATQ_CMD_DECLARE_ST(CMD_AT_CLIP, cmd18),		/* disable  Calling line identification presentation in unsolicited response +CLIP: <number>,<type>[,<subaddr>,<satype>[,[<alpha>][,<CLI validitity>]] */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CSSN, cmd19),		/* activate Supplementary Service Notification with CSSI and CSSU */
+		ATQ_CMD_DECLARE_DYNI(CMD_AT_QMIC),		/* optional, uplink mic gains, kept by module until it restarts */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CMGF, cmd20),		/* Set Message Format */
 
  		ATQ_CMD_DECLARE_STI(CMD_AT_CSCS, cmd21),	/* UCS-2 text encoding */
@@ -176,6 +177,7 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 	int begin = -1;
 	int err;
 	char * ptmp1 = NULL;
+	char * ptmp2 = NULL;
 	pvt_t * pvt = cpvt->pvt;
 	at_queue_cmd_t cmds[ITEMS_OF(st_cmds)];
 
@@ -194,6 +196,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 			continue;
 		if(st_cmds[in].cmd == CMD_AT_U2DIAG && CONF_SHARED(pvt, u2diag) == -1)
 			continue;
+		if(st_cmds[in].cmd == CMD_AT_QMIC && !CONF_SHARED(pvt, qmic)[0])
+			continue;
 
 		memcpy(&cmds[out], &st_cmds[in], sizeof(st_cmds[in]));
 
@@ -203,6 +207,13 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 			if(err)
 				goto failure;
 			ptmp1 = cmds[out].data;
+		}
+		if(cmds[out].cmd == CMD_AT_QMIC)
+		{
+			err = at_fill_generic_cmd(&cmds[out], "AT+QMIC=%s\r", CONF_SHARED(pvt, qmic));
+			if(err)
+				goto failure;
+			ptmp2 = cmds[out].data;
 		}
 		if(cmds[out].cmd == from_command)
 			begin = out;
@@ -215,6 +226,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 failure:
 	if(ptmp1)
 		ast_free(ptmp1);
+	if(ptmp2)
+		ast_free(ptmp2);
 	return err;
 }
 
