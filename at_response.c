@@ -15,6 +15,7 @@
 #include <asterisk/logger.h>			/* ast_debug() */
 #include <asterisk/pbx.h>			/* ast_pbx_start() */
 #include <sys/sysinfo.h>
+#include <ctype.h>				/* isalnum() */
 #include "ast_compat.h"				/* asterisk compatibility fixes */
 
 #include "at_response.h"
@@ -372,6 +373,18 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 					pvt->volume_sync_step = VOLUME_SYNC_BEGIN;
 				}
 				break;
+				break;
+				ast_debug (1, "[%s] Uplink mic gains set\n", PVT_ID(pvt));
+				break;
+			case CMD_AT_QCCID:
+			case CMD_AT_CIREG:
+			case CMD_AT_QCSQ:
+			case CMD_AT_QNWINFO:
+			case CMD_AT_CPMS_Q:
+			case CMD_AT_QCFG_IMS:
+			case CMD_AT_QENG:
+				ast_debug (3, "[%s] Status query '%s' done\n", PVT_ID(pvt), at_cmd2str (ecmd->cmd));
+				break;
 			case CMD_USER:
 				break;
 			default:
@@ -659,6 +672,31 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 			case CMD_AT_CUSD:
 				ast_verb (3, "[%s] Error sending USSD %p\n", PVT_ID(pvt), task);
 				log_cmd_response_error(pvt, ecmd, "[%s] Error sending USSD %p\n", PVT_ID(pvt), task);
+				break;
+
+			/* optional status queries: stop sending what the module does not support */
+			case CMD_AT_QCCID:
+				pvt->no_qccid = 1;
+				goto status_unsupported;
+			case CMD_AT_CIREG:
+				pvt->no_cireg = 1;
+				goto status_unsupported;
+			case CMD_AT_QCSQ:
+				pvt->no_qcsq = 1;
+				goto status_unsupported;
+			case CMD_AT_QNWINFO:
+				pvt->no_qnwinfo = 1;
+				goto status_unsupported;
+			case CMD_AT_QCFG_IMS:
+				pvt->no_qcfg_ims = 1;
+				goto status_unsupported;
+			case CMD_AT_QENG:
+				pvt->no_qeng = 1;
+				goto status_unsupported;
+			case CMD_AT_CPMS_Q:
+				pvt->no_cpms_q = 1;
+status_unsupported:
+				ast_verb (3, "[%s] '%s' not supported by the module, not queried again\n", PVT_ID(pvt), at_cmd2str (ecmd->cmd));
 				break;
 
 			default:
@@ -1861,6 +1899,139 @@ static int at_response_cops (struct pvt* pvt, char* str)
 }
 
 /*!
+ * \brief Handle "+CIREG: <n>,<reg_info>[,<ext_info>]": IMS (VoLTE) registration
+ */
+static int at_response_cireg (struct pvt* pvt, const char* str)
+{
+	int n, reg;
+
+	if (sscanf (str + STRLEN("+CIREG:"), "%d,%d", &n, &reg) == 2)
+		pvt->ims_reg_status = reg;
+	else
+		ast_debug (1, "[%s] Error parsing CIREG: '%s'\n", PVT_ID(pvt), str);
+	return 0;
+}
+
+/*!
+ * \brief Handle "+QCCID: <iccid>"
+ */
+static int at_response_qccid (struct pvt* pvt, const char* str)
+{
+	const char* p = ast_skip_blanks (str + STRLEN("+QCCID:"));
+	unsigned i;
+
+	for (i = 0; i < sizeof (pvt->iccid) - 1 && isalnum ((unsigned char) p[i]); i++)
+		pvt->iccid[i] = p[i];
+	pvt->iccid[i] = '\0';
+	return 0;
+}
+
+/*!
+ * \brief Handle "+QCSQ: <sysmode>[,<value1>[,<value2>[,<value3>[,<value4>]]]]"
+ *
+ * For "LTE" the values are rssi, rsrp, sinr, rsrq; sinr 0..250 maps to -20..+30 dB.
+ */
+static int at_response_qcsq (struct pvt* pvt, const char* str)
+{
+	char mode[16];
+	int v[4];
+	int n = sscanf (str + STRLEN("+QCSQ:"), " \"%15[^\"]\",%d,%d,%d,%d", mode, &v[0], &v[1], &v[2], &v[3]);
+
+	if (n < 1)
+	{
+		ast_debug (1, "[%s] Error parsing QCSQ: '%s'\n", PVT_ID(pvt), str);
+		return 0;
+	}
+	ast_copy_string (pvt->sig_mode, mode, sizeof (pvt->sig_mode));
+	pvt->sig_count = n - 1;
+	memcpy (pvt->sig_val, v, sizeof (v[0]) * (n - 1));
+	return 0;
+}
+
+/*!
+ * \brief Handle "+QNWINFO: <act>,<oper>,<band>,<channel>", e.g. "FDD LTE","46011","LTE BAND 3",1825
+ */
+static int at_response_qnwinfo (struct pvt* pvt, const char* str)
+{
+	char act[24] = "", oper[12] = "", band[24] = "";
+	int channel = -1;
+
+	/* "+QNWINFO: No Service" has no quotes */
+	if (sscanf (str + STRLEN("+QNWINFO:"), " \"%23[^\"]\",\"%11[^\"]\",\"%23[^\"]\",%d", act, oper, band, &channel) < 1)
+		ast_copy_string (act, ast_skip_blanks (str + STRLEN("+QNWINFO:")), sizeof (act));
+	ast_copy_string (pvt->nw_act, act, sizeof (pvt->nw_act));
+	ast_copy_string (pvt->nw_oper, oper, sizeof (pvt->nw_oper));
+	ast_copy_string (pvt->nw_band, band, sizeof (pvt->nw_band));
+	pvt->nw_channel = channel;
+	return 0;
+}
+
+/*!
+ * \brief Handle +QCFG; only "ims": +QCFG: "ims",<ims_mode>,<volte_state>, state 1 = VoLTE ready
+ */
+static int at_response_qcfg (struct pvt* pvt, const char* str)
+{
+	int mode, state;
+
+	if (sscanf (str + STRLEN("+QCFG:"), " \"ims\",%d,%d", &mode, &state) == 2)
+		pvt->ims_reg_status = state ? 1 : 0;
+	return 0;
+}
+
+/*!
+ * \brief Handle +QENG: "servingcell": cell id, PCI and TAC of the LTE serving cell
+ *
+ * +QENG: "servingcell",<state>,"LTE",<is_tdd>,<mcc>,<mnc>,<cellid>,<pcid>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,...
+ * Other modes (or "SEARCH", no service) only clear the values.
+ */
+static int at_response_qeng (struct pvt* pvt, const char* str)
+{
+	char cell[12], tac[8];
+	int pci;
+
+	if (strncmp (ast_skip_blanks (str + STRLEN("+QENG:")), "\"servingcell\"", 13))
+		return 0;
+	if (sscanf (str + STRLEN("+QENG:"), " \"servingcell\",\"%*[^\"]\",\"LTE\",\"%*[^\"]\",%*d,%*d,%11[0-9A-Fa-f],%d,%*d,%*d,%*d,%*d,%7[0-9A-Fa-f]", cell, &pci, tac) == 3)
+	{
+		ast_copy_string (pvt->lte_cell_id, cell, sizeof (pvt->lte_cell_id));
+		ast_copy_string (pvt->cell_tac, tac, sizeof (pvt->cell_tac));
+		pvt->cell_pci = pci;
+	}
+	else
+	{
+		pvt->lte_cell_id[0] = '\0';
+		pvt->cell_tac[0] = '\0';
+		pvt->cell_pci = -1;
+	}
+	return 0;
+}
+
+/*!
+ * \brief Handle +CPMS: SIM SMS storage use, first memory only
+ *
+ * Query reply: +CPMS: "SM",<used>,<total>,...; reply to AT+CPMS=...: +CPMS: <used>,<total>,...
+ */
+static int at_response_cpms (struct pvt* pvt, const char* str)
+{
+	const char* p = ast_skip_blanks (str + STRLEN("+CPMS:"));
+	int used, total;
+
+	if (*p == '"')
+	{
+		p = strchr (p + 1, '"');
+		if (!p || *++p != ',')
+			return 0;
+		p++;
+	}
+	if (sscanf (p, "%d,%d", &used, &total) == 2)
+	{
+		pvt->sms_used = used;
+		pvt->sms_total = total;
+	}
+	return 0;
+}
+
+/*!
  * \brief Handle +CREG response Here we get the GSM registration status
  * \param pvt -- pvt structure
  * \param str -- string containing response (null terminated)
@@ -2060,6 +2231,26 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 			case RES_SRVST:
 			case RES_CVOICE:
 			case RES_CPMS:
+				return at_response_cpms (pvt, str);
+
+			case RES_CIREG:
+				return at_response_cireg (pvt, str);
+
+			case RES_QCCID:
+				return at_response_qccid (pvt, str);
+
+			case RES_QCSQ:
+				return at_response_qcsq (pvt, str);
+
+			case RES_QNWINFO:
+				return at_response_qnwinfo (pvt, str);
+
+			case RES_QCFG:
+				return at_response_qcfg (pvt, str);
+
+			case RES_QENG:
+				return at_response_qeng (pvt, str);
+
 			case RES_CONF: 
                                       return 0;
 

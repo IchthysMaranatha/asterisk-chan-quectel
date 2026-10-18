@@ -63,6 +63,13 @@
 	_( AT_DDSETEX,      "AT+CPCMREG=1") \
         _( AT_DDSETEX0,     "AT+CPCMREG=0") \
 	_( AT_DTMF,         "AT^DTMF") \
+	_( AT_QCCID,        "AT+QCCID") \
+	_( AT_CIREG,        "AT+CIREG?") \
+	_( AT_QCSQ,         "AT+QCSQ") \
+	_( AT_QNWINFO,      "AT+QNWINFO") \
+	_( AT_CPMS_Q,       "AT+CPMS?") \
+	_( AT_QCFG_IMS,     "AT+QCFG=\"ims\"") \
+	_( AT_QENG,         "AT+QENG") \
 	_( AT_E,            "ATE") \
 \
 	_( AT_U2DIAG,       "AT^U2DIAG") \
@@ -105,6 +112,7 @@ struct cpvt;
 EXPORT_DECL const char *at_cmd2str(at_cmd_t cmd);
 EXPORT_DECL int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_command);
 EXPORT_DECL int at_enqueue_ping(struct cpvt *cpvt);
+EXPORT_DECL int at_enqueue_status_poll(struct cpvt *cpvt);
 EXPORT_DECL int at_enqueue_cops(struct cpvt *cpvt);
 EXPORT_DECL int at_enqueue_sms(struct cpvt *cpvt, const char *number, const char *msg, unsigned validity_min, int report_req, const char *payload, size_t payload_len);
 EXPORT_DECL int at_enqueue_ussd(struct cpvt *cpvt, const char *code);

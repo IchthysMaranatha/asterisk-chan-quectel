@@ -169,6 +169,14 @@ EXPORT_DEF void dc_sconfig_fill(struct ast_config * cfg, const char * cat, struc
 		{
 			config->resetquectel = ast_true (v->value);		/* resetquectel is set to 0 if invalid */
 		}
+		else if (!strcasecmp (v->name, "statusinterval"))
+		{
+			int val;
+			if (sscanf (v->value, "%d", &val) == 1 && (val == 0 || (val >= 10 && val <= 3600)))
+				config->statusinterval = val;
+			else
+				ast_log(LOG_ERROR, "Invalid value for 'statusinterval' '%s', expected 0 or 10-3600, not changed\n", v->value);
+		}
 		else if (!strcasecmp (v->name, "disablesms"))
 		{
 			config->disablesms = ast_true (v->value);		/* disablesms is set to 0 if invalid */

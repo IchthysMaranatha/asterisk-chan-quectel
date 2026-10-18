@@ -151,6 +151,7 @@ static char* cli_show_device_settings (struct ast_cli_entry* e, int cmd, struct 
 		ast_cli (a->fd, "  Minimal DTMF Gap        : %d\n", CONF_SHARED(pvt, mindtmfgap));
 		ast_cli (a->fd, "  Minimal DTMF Duration   : %d\n", CONF_SHARED(pvt, mindtmfduration));
 		ast_cli (a->fd, "  Minimal DTMF Interval   : %d\n", CONF_SHARED(pvt, mindtmfinterval));
+		ast_cli (a->fd, "  Status poll interval    : %d\n", CONF_SHARED(pvt, statusinterval));
 		ast_cli (a->fd, "  Initial device state    : %s\n\n", dev_state2str(CONF_SHARED(pvt, initstate)));
 
 		ast_mutex_unlock (&pvt->lock);
@@ -209,6 +210,42 @@ static char* cli_show_device_state (struct ast_cli_entry* e, int cmd, struct ast
 		ast_cli (a->fd, "  IMEI                    : %s\n", pvt->imei);
 		ast_cli (a->fd, "  IMSI                    : %s\n", pvt->imsi);
 		ast_cli (a->fd, "  GSM Registration Status : %s\n", GSM_regstate2str(pvt->gsm_reg_status));
+		if (CONF_SHARED(pvt, statusinterval) > 0)
+		{
+			ast_cli (a->fd, "  IMS Registration Status : %s\n", (pvt->no_cireg && pvt->no_qcfg_ims) ? "Not supported" :
+				pvt->ims_reg_status == 1 ? "Registered" : pvt->ims_reg_status == 0 ? "Not registered" : "Unknown");
+			ast_cli (a->fd, "  ICCID                   : %s\n", pvt->iccid[0] ? pvt->iccid : (pvt->no_qccid ? "Not supported" : "Unknown"));
+			ast_cli (a->fd, "  Access Technology       : %s\n", pvt->nw_act[0] ? pvt->nw_act : (pvt->no_qnwinfo ? "Not supported" : "Unknown"));
+			ast_cli (a->fd, "  Network Code            : %s\n", pvt->nw_oper[0] ? pvt->nw_oper : "Unknown");
+			ast_cli (a->fd, "  Band                    : %s\n", pvt->nw_band[0] ? pvt->nw_band : "Unknown");
+			if (pvt->nw_channel >= 0)
+				ast_cli (a->fd, "  Channel                 : %d\n", pvt->nw_channel);
+			else
+				ast_cli (a->fd, "  Channel                 : Unknown\n");
+			ast_cli (a->fd, "  LTE Cell ID             : %s\n", pvt->lte_cell_id[0] ? pvt->lte_cell_id : (pvt->no_qeng ? "Not supported" : "Unknown"));
+			if (pvt->cell_pci >= 0)
+				ast_cli (a->fd, "  PCI                     : %d\n", pvt->cell_pci);
+			else
+				ast_cli (a->fd, "  PCI                     : Unknown\n");
+			ast_cli (a->fd, "  TAC                     : %s\n", pvt->cell_tac[0] ? pvt->cell_tac : "Unknown");
+			ast_cli (a->fd, "  Signal Mode             : %s\n", pvt->sig_mode[0] ? pvt->sig_mode : (pvt->no_qcsq ? "Not supported" : "Unknown"));
+			if (!strcmp (pvt->sig_mode, "LTE") && pvt->sig_count >= 4)
+			{
+				int sinr10 = pvt->sig_val[2] * 2 - 200;	/* 0..250 -> -20.0..+30.0 dB */
+				ast_cli (a->fd, "  LTE RSSI                : %d dBm\n", pvt->sig_val[0]);
+				ast_cli (a->fd, "  LTE RSRP                : %d dBm\n", pvt->sig_val[1]);
+				ast_cli (a->fd, "  LTE RSRQ                : %d dB\n", pvt->sig_val[3]);
+				ast_cli (a->fd, "  LTE SINR                : %s%d.%d dB\n", sinr10 < 0 ? "-" : "", abs (sinr10) / 10, abs (sinr10) % 10);
+			}
+			if (pvt->sms_total >= 0)
+				ast_cli (a->fd, "  SIM SMS Storage         : %d/%d\n", pvt->sms_used, pvt->sms_total);
+			else
+				ast_cli (a->fd, "  SIM SMS Storage         : %s\n", pvt->no_cpms_q ? "Not supported" : "Unknown");
+			if (pvt->last_status_poll)
+				ast_cli (a->fd, "  Last Status Poll        : %ld s ago\n", (long) (time (NULL) - pvt->last_status_poll));
+			else
+				ast_cli (a->fd, "  Last Status Poll        : Never\n");
+		}
 		ast_cli (a->fd, "  RSSI                    : %d, %s\n", pvt->rssi, rssi2dBm(pvt->rssi, buf, sizeof(buf)));
 		ast_cli (a->fd, "  Mode                    : %s\n", sys_mode2str(pvt->linkmode));
 		ast_cli (a->fd, "  Submode                 : %s\n", sys_submode2str(pvt->linksubmode));

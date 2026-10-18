@@ -64,6 +64,12 @@ struct iovec;
 	_( CLCC,        "+CLCC",        "+CLCC:") \
 	_( RCEND,       "CALLEND",      "REMOTE CALL END") \
 	_( CCWA,        "+CCWA",        "+CCWA:") \
+	_( CIREG,       "+CIREG",       "+CIREG:") \
+	_( QCCID,       "+QCCID",       "+QCCID:") \
+	_( QCSQ,        "+QCSQ",        "+QCSQ:") \
+	_( QNWINFO,     "+QNWINFO",     "+QNWINFO:") \
+	_( QCFG,        "+QCFG",        "+QCFG:") \
+	_( QENG,        "+QENG",        "+QENG:") \
 /* AT_RESPONSES_TABLE */
 
 
@@ -76,7 +82,7 @@ typedef enum {
 
 	/* Hackish way to maintain MAX and MIN responses for compatibility */
 	RES_MIN = RES_PARSE_ERROR,
-	RES_MAX = RES_CCWA,
+	RES_MAX = RES_QENG,
 } at_res_t;
 
 /*! response description */

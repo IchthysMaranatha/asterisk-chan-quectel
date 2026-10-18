@@ -401,6 +401,32 @@ EXPORT_DEF int opentty (const char* dev, char ** lockfile, int typ)
 	return fd;
 }
 
+/* forget values read by the status poll, e.g. after the module was disconnected */
+static void pvt_reset_status_poll (struct pvt* pvt)
+{
+	pvt->ims_reg_status = -1;
+	pvt->sms_used = -1;
+	pvt->sms_total = -1;
+	pvt->sig_mode[0] = '\0';
+	pvt->sig_count = 0;
+	pvt->nw_act[0] = '\0';
+	pvt->nw_oper[0] = '\0';
+	pvt->nw_band[0] = '\0';
+	pvt->nw_channel = -1;
+	pvt->iccid[0] = '\0';
+	pvt->lte_cell_id[0] = '\0';
+	pvt->cell_tac[0] = '\0';
+	pvt->cell_pci = -1;
+	pvt->last_status_poll = 0;
+	pvt->no_qccid = 0;
+	pvt->no_cireg = 0;
+	pvt->no_qcsq = 0;
+	pvt->no_qnwinfo = 0;
+	pvt->no_cpms_q = 0;
+	pvt->no_qcfg_ims = 0;
+	pvt->no_qeng = 0;
+}
+
 #/* phone monitor thread pvt cleanup */
 static void disconnect_quectel (struct pvt* pvt)
 {
@@ -445,6 +471,7 @@ static void disconnect_quectel (struct pvt* pvt)
 		/* unaffected in case of restart */
 		pvt->use_ucs2_encoding = 0;
 		pvt->gsm_reg_status = -1;
+		pvt_reset_status_poll (pvt);
 		pvt->rssi = 0;
 		pvt->linkmode = 0;
 		pvt->linksubmode = 0;
@@ -653,6 +680,18 @@ static void* do_monitor_phone (void* data)
 		{
 			ast_log (LOG_NOTICE, "[%s] stopping by %s request\n", dev, dev_state2str(pvt->desired_state));
 			goto e_restart;
+		}
+
+		/* status poll: only while idle, AT commands during a call have caused audio problems */
+		if (CONF_SHARED(pvt, statusinterval) > 0 && pvt->initialized && PVT_NO_CHANS(pvt)
+			&& !pvt->ring && !pvt->dialing && !pvt->cwaiting && !at_queue_head_cmd(pvt))
+		{
+			time_t now = time(NULL);
+			if (now - pvt->last_status_poll >= CONF_SHARED(pvt, statusinterval))
+			{
+				pvt->last_status_poll = now;
+				at_enqueue_status_poll(&pvt->sys_chan);
+			}
 		}
 
 		t = at_queue_timeout(pvt);
@@ -1656,6 +1695,7 @@ static struct pvt * pvt_create(const pvt_config_t * settings)
 		pvt->data_fd			= -1;
 		pvt->timeout			= DATA_READ_TIMEOUT;
 		pvt->gsm_reg_status		= -1;
+		pvt_reset_status_poll (pvt);
 		pvt->incoming_sms_index		= -1U;
 
 		ast_copy_string (pvt->provider_name, "NONE", sizeof (pvt->provider_name));

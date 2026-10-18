@@ -77,6 +77,7 @@ typedef struct dc_sconfig
 	unsigned int		autodeletesms:1;		/*! 0 */
 	unsigned int		resetquectel:1;			/*! 1 */
 	unsigned int		disablesms:1;			/*! 0 */
+	int			statusinterval;			/*!< seconds between idle status polls (signal, IMS, network, SIM storage), 0 = off */
 	dev_state_t		initstate;			/*! DEV_STATE_STARTED */
 //	unsigned int		disable:1;			/*! 0 */
 
