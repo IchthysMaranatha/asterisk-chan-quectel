@@ -1008,6 +1008,28 @@ static int at_response_csca (struct pvt* pvt, char* str)
 		ast_debug (1, "[%s] Could not parse CSCA response '%s'\n", PVT_ID(pvt), str);
 		return -1;
 	}
+	/* after AT+CSCS="UCS2" the module reports the number as UCS-2 hex ("002B0038...");
+	 * decode it when every character is ASCII, it would not fit sms_scenter otherwise */
+	size_t n = strlen (csca);
+	if (n >= 8 && n % 4 == 0 && n / 4 < sizeof (pvt->sms_scenter) && strspn (csca, "0123456789ABCDEFabcdef") == n)
+	{
+		char num[sizeof (pvt->sms_scenter)];
+		size_t i;
+		for (i = 0; i < n / 4; i++)
+		{
+			unsigned cu;
+			if (sscanf (csca + i * 4, "%4x", &cu) != 1 || cu < 0x20 || cu > 0x7e)
+				break;
+			num[i] = (char) cu;
+		}
+		if (i == n / 4)
+		{
+			num[i] = '\0';
+			ast_copy_string (pvt->sms_scenter, num, sizeof (pvt->sms_scenter));
+			ast_debug (1, "[%s] CSCA: %s (from UCS-2 %s)\n", PVT_ID(pvt), pvt->sms_scenter, csca);
+			return 0;
+		}
+	}
 	ast_copy_string (pvt->sms_scenter, csca, sizeof (pvt->sms_scenter));
 
 	ast_debug (1, "[%s] CSCA: %s\n", PVT_ID(pvt), pvt->sms_scenter);
