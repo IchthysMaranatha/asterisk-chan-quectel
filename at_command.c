@@ -126,6 +126,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 	static const char cmd13[] = "AT+COPS=0,0\r";
 	static const char cmd14[] = "AT+CREG=2\r";
 	static const char cmd15[] = "AT+CREG?\r";
+	static const char cmd15a[] = "AT+CEREG=1\r";
+	static const char cmd15b[] = "AT+CEREG?\r";
 	static const char cmd16[] = "AT+CNUM\r";
 
 	static const char cmd17[] = "AT+QPCMV?\r";
@@ -157,6 +159,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 
 		ATQ_CMD_DECLARE_STI(CMD_AT_CREG_INIT,cmd14),	/* GSM registration status setting */
 		ATQ_CMD_DECLARE_ST(CMD_AT_CREG, cmd15),		/* GSM registration status */
+		ATQ_CMD_DECLARE_STI(CMD_AT_CEREG_INIT, cmd15a),	/* optional, EPS (LTE) registration URC +CEREG: <stat> */
+		ATQ_CMD_DECLARE_STI(CMD_AT_CEREG, cmd15b),	/* optional, EPS (LTE) registration status */
 		ATQ_CMD_DECLARE_STI(CMD_AT_CNUM, cmd16),		/* Get Subscriber number */
 		ATQ_CMD_DECLARE_STI(CMD_AT_CVOICE, cmd17),	/* read the current voice mode, and return sampling rate、data bit、frame period */
 		ATQ_CMD_DECLARE_STI(CMD_AT_CVOICE2, cmd17a),
@@ -193,6 +197,8 @@ EXPORT_DEF int at_enqueue_initialization(struct cpvt *cpvt, at_cmd_t from_comman
 		if(st_cmds[in].cmd == CMD_AT_Z && !CONF_SHARED(pvt, resetquectel))
 			continue;
 		if(st_cmds[in].cmd == CMD_AT_U2DIAG && CONF_SHARED(pvt, u2diag) == -1)
+			continue;
+		if((st_cmds[in].cmd == CMD_AT_CEREG_INIT || st_cmds[in].cmd == CMD_AT_CEREG) && !CONF_SHARED(pvt, epsregistration))
 			continue;
 
 		memcpy(&cmds[out], &st_cmds[in], sizeof(st_cmds[in]));

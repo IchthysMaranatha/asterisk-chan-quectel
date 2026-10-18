@@ -445,6 +445,7 @@ static void disconnect_quectel (struct pvt* pvt)
 		/* unaffected in case of restart */
 		pvt->use_ucs2_encoding = 0;
 		pvt->gsm_reg_status = -1;
+		pvt->eps_reg_status = -1;
 		pvt->rssi = 0;
 		pvt->linkmode = 0;
 		pvt->linksubmode = 0;
@@ -461,6 +462,8 @@ static void disconnect_quectel (struct pvt* pvt)
 		pvt->sms_scenter[0] = '\0';
 
 		pvt->gsm_registered	= 0;
+		pvt->cs_registered	= 0;
+		pvt->eps_registered	= 0;
 		pvt->has_sms = 0;
 		pvt->has_voice = 0;
 		pvt->has_call_waiting = 0;
@@ -1656,6 +1659,7 @@ static struct pvt * pvt_create(const pvt_config_t * settings)
 		pvt->data_fd			= -1;
 		pvt->timeout			= DATA_READ_TIMEOUT;
 		pvt->gsm_reg_status		= -1;
+		pvt->eps_reg_status		= -1;
 		pvt->incoming_sms_index		= -1U;
 
 		ast_copy_string (pvt->provider_name, "NONE", sizeof (pvt->provider_name));

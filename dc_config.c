@@ -169,6 +169,10 @@ EXPORT_DEF void dc_sconfig_fill(struct ast_config * cfg, const char * cat, struc
 		{
 			config->resetquectel = ast_true (v->value);		/* resetquectel is set to 0 if invalid */
 		}
+		else if (!strcasecmp (v->name, "epsregistration"))
+		{
+			config->epsregistration = ast_true (v->value);	/* epsregistration is set to 0 if invalid */
+		}
 		else if (!strcasecmp (v->name, "disablesms"))
 		{
 			config->disablesms = ast_true (v->value);		/* disablesms is set to 0 if invalid */

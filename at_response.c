@@ -215,6 +215,11 @@ static int at_response_ok (struct pvt* pvt, at_res_t res)
 				ast_debug (1, "[%s] registration query sent\n", PVT_ID(pvt));
 				break;
 
+			case CMD_AT_CEREG_INIT:
+			case CMD_AT_CEREG:
+				ast_debug (1, "[%s] EPS registration info enabled/queried\n", PVT_ID(pvt));
+				break;
+
 			case CMD_AT_CNUM:
 				ast_debug (1, "[%s] Subscriber phone number query successed\n", PVT_ID(pvt));
 				break;
@@ -483,6 +488,11 @@ static int at_response_error (struct pvt* pvt, at_res_t res)
 
 			case CMD_AT_CREG:
 				ast_debug (1, "[%s] Error getting registration info\n", PVT_ID(pvt));
+				break;
+
+			case CMD_AT_CEREG_INIT:
+			case CMD_AT_CEREG:
+				log_cmd_response_error(pvt, ecmd, "[%s] EPS registration info not available\n", PVT_ID(pvt));
 				break;
 
 			case CMD_AT_CVOICE:
@@ -1861,6 +1871,52 @@ static int at_response_cops (struct pvt* pvt, char* str)
 }
 
 /*!
+ * \brief Set gsm_registered from CS (+CREG) and, with epsregistration, EPS (+CEREG) state
+ * \param pvt -- pvt structure
+ *
+ * On VoLTE-only networks the module may report +CREG: 0 while it is registered on LTE
+ * and calls work, so with epsregistration either registration allows calls.
+ */
+static void update_registration (struct pvt* pvt)
+{
+	int reg = pvt->cs_registered || (CONF_SHARED(pvt, epsregistration) && pvt->eps_registered);
+
+	if (reg != pvt->gsm_registered)
+		ast_verb (3, "[%s] %s (CS %d, EPS %d)\n", PVT_ID(pvt), reg ? "Registered" : "Not registered", pvt->cs_registered, pvt->eps_registered);
+	pvt->gsm_registered = reg;
+	manager_event_device_status(PVT_ID(pvt), reg ? "Register" : "Unregister");
+}
+
+/*!
+ * \brief Handle +CEREG response: EPS (LTE) registration status
+ * \param pvt -- pvt structure
+ * \param str -- "+CEREG: [<n>,]<stat>[,...]" (null terminated)
+ * \retval  0 success, errors here are not fatal
+ */
+static int at_response_cereg (struct pvt* pvt, const char* str)
+{
+	int a, b, stat;
+	int n = sscanf (str + STRLEN("+CEREG:"), "%d,%d", &a, &b);
+
+	/* query reply "+CEREG: <n>,<stat>[,...]", URC with n=1 "+CEREG: <stat>", with n=2 "+CEREG: <stat>,\"<tac>\",..." */
+	if (n == 2)
+		stat = b;
+	else if (n == 1)
+		stat = a;
+	else
+	{
+		ast_debug (1, "[%s] Error parsing CEREG: '%s'\n", PVT_ID(pvt), str);
+		return 0;
+	}
+
+	pvt->eps_reg_status = stat;
+	pvt->eps_registered = (stat == 1 || stat == 5);
+	ast_debug (1, "[%s] EPS registration status %d\n", PVT_ID(pvt), stat);
+	update_registration (pvt);
+	return 0;
+}
+
+/*!
  * \brief Handle +CREG response Here we get the GSM registration status
  * \param pvt -- pvt structure
  * \param str -- string containing response (null terminated)
@@ -1893,14 +1949,9 @@ static int at_response_creg (struct pvt* pvt, char* str, size_t len)
 		if(!pvt->gsm_registered && CONF_SHARED(pvt, callwaiting) != CALL_WAITING_AUTO)
 			at_enqueue_set_ccwa(&pvt->sys_chan, CONF_SHARED(pvt, callwaiting));
 //#endif
-		pvt->gsm_registered = 1;
-		manager_event_device_status(PVT_ID(pvt), "Register");
 	}
-	else
-	{
-		pvt->gsm_registered = 0;
-		manager_event_device_status(PVT_ID(pvt), "Unregister");
-	}
+	pvt->cs_registered = d ? 1 : 0;
+	update_registration (pvt);
 
 	if (lac)
 	{
@@ -2116,6 +2167,12 @@ int at_response (struct pvt* pvt, const struct iovec iov[2], int iovcnt, at_res_
 			case RES_CREG:
 				/* An error here is not fatal. Just keep going. */
 				at_response_creg (pvt, str, len);
+				return 0;
+
+			case RES_CEREG:
+				if (CONF_SHARED(pvt, epsregistration))
+					return at_response_cereg (pvt, str);
+				ast_debug (1, "[%s] Ignoring '%s', epsregistration is off\n", PVT_ID(pvt), str);
 				return 0;
 
 			case RES_COPS:

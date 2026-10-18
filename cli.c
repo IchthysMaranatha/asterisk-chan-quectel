@@ -151,6 +151,7 @@ static char* cli_show_device_settings (struct ast_cli_entry* e, int cmd, struct 
 		ast_cli (a->fd, "  Minimal DTMF Gap        : %d\n", CONF_SHARED(pvt, mindtmfgap));
 		ast_cli (a->fd, "  Minimal DTMF Duration   : %d\n", CONF_SHARED(pvt, mindtmfduration));
 		ast_cli (a->fd, "  Minimal DTMF Interval   : %d\n", CONF_SHARED(pvt, mindtmfinterval));
+		ast_cli (a->fd, "  EPS registration        : %s\n", CONF_SHARED(pvt, epsregistration) ? "Yes" : "No");
 		ast_cli (a->fd, "  Initial device state    : %s\n\n", dev_state2str(CONF_SHARED(pvt, initstate)));
 
 		ast_mutex_unlock (&pvt->lock);
@@ -209,6 +210,7 @@ static char* cli_show_device_state (struct ast_cli_entry* e, int cmd, struct ast
 		ast_cli (a->fd, "  IMEI                    : %s\n", pvt->imei);
 		ast_cli (a->fd, "  IMSI                    : %s\n", pvt->imsi);
 		ast_cli (a->fd, "  GSM Registration Status : %s\n", GSM_regstate2str(pvt->gsm_reg_status));
+		ast_cli (a->fd, "  EPS Registration Status : %s\n", GSM_regstate2str(pvt->eps_reg_status));
 		ast_cli (a->fd, "  RSSI                    : %d, %s\n", pvt->rssi, rssi2dBm(pvt->rssi, buf, sizeof(buf)));
 		ast_cli (a->fd, "  Mode                    : %s\n", sys_mode2str(pvt->linkmode));
 		ast_cli (a->fd, "  Submode                 : %s\n", sys_submode2str(pvt->linksubmode));
