@@ -44,6 +44,10 @@ typedef struct sms_task {
   int parts;                      /* Total number of parts */
   int order;                      /* Current part order */
 
+  /* Modem storage index to delete once the part is stored or delivered,
+   * or -1U to keep it on the modem */
+  unsigned int delete_index;
+
   /* Message content */
   char message[SMS_QUEUE_MSG_SIZE];
 
@@ -73,11 +77,13 @@ void sms_queue_shutdown(void);
  * \param parts Total number of parts
  * \param order Current part order (1-based)
  * \param message The message content
+ * \param delete_index Modem storage index to delete after the part has been
+ *        stored or delivered, or -1U to keep the message on the modem
  * \retval 0 success
  * \retval -1 error
  */
 int sms_queue_put(const char *imsi, const char *device_id, const char *sender,
                   const char *scts, int ref, int parts, int order,
-                  const char *message);
+                  const char *message, unsigned int delete_index);
 
 #endif /* SMS_QUEUE_H */

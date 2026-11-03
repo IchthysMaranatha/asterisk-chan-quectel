@@ -1560,10 +1560,12 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 				ast_verb (1, "[%s] Got SM part from %s: '%s'; [ref=%d, parts=%d, order=%d]\n", PVT_ID(pvt), oa, msg, udh.ref, udh.parts, udh.order);
 				/* SMSDB access and delivery run in the SMS queue thread so a
 				 * slow or locked database does not stall the monitor loop */
-				if (sms_queue_put(pvt->imsi, PVT_ID(pvt), oa, scts, udh.ref, udh.parts, udh.order, msg) != 0) {
-					ast_log(LOG_ERROR, "[%s] Failed to queue SMS for async processing\n", PVT_ID(pvt));
+				if (sms_queue_put(pvt->imsi, PVT_ID(pvt), oa, scts, udh.ref, udh.parts, udh.order, msg,
+						CONF_SHARED(pvt, autodeletesms) ? pvt->incoming_sms_index : -1U) != 0) {
+					ast_log(LOG_ERROR, "[%s] Failed to queue SMS for async processing, leaving it on the modem\n", PVT_ID(pvt));
 				}
-				break;
+				/* the SMS queue deletes the message once it is stored or delivered */
+				goto receive_next_no_delete;
 			}
 		}
 		else

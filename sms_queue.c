@@ -35,6 +35,7 @@ static ast_cond_t sms_queue_cond;
 /* Forward declarations */
 static void *sms_worker_func(void *arg);
 static void process_sms_task(sms_task_t *task);
+static void delete_from_modem(struct pvt *pvt, const sms_task_t *task);
 
 /*!
  * \brief Initialize the SMS queue system
@@ -82,7 +83,8 @@ void sms_queue_shutdown(void) {
     sms_worker_thread = AST_PTHREADT_NULL;
   }
 
-  /* Clean up remaining tasks */
+  /* Drop remaining tasks. Their messages have not been deleted from the
+   * modem yet, so they are read again when the module is loaded. */
   AST_LIST_LOCK(&sms_queue);
   while ((task = AST_LIST_REMOVE_HEAD(&sms_queue, entry))) {
     ast_free(task);
@@ -99,7 +101,7 @@ void sms_queue_shutdown(void) {
  */
 int sms_queue_put(const char *imsi, const char *device_id, const char *sender,
                   const char *scts, int ref, int parts, int order,
-                  const char *message) {
+                  const char *message, unsigned int delete_index) {
   sms_task_t *task;
 
   if (sms_queue_shutdown_flag) {
@@ -122,6 +124,7 @@ int sms_queue_put(const char *imsi, const char *device_id, const char *sender,
   task->parts = parts;
   task->order = order;
   ast_copy_string(task->message, message, sizeof(task->message));
+  task->delete_index = delete_index;
 
   AST_LIST_LOCK(&sms_queue);
   AST_LIST_INSERT_TAIL(&sms_queue, task, entry);
@@ -204,6 +207,12 @@ static void process_sms_task(sms_task_t *task) {
         /* Still waiting for more parts */
         ast_verb(1, "[%s] SMS part %d/%d stored, waiting for remaining parts\n",
                  task->device_id, task->order, task->parts);
+        /* The part is safe in SMSDB now */
+        pvt = find_device_ext(task->device_id);
+        if (pvt) {
+          delete_from_modem(pvt, task);
+          ast_mutex_unlock(&pvt->lock);
+        }
         return;
       }
 
@@ -241,11 +250,26 @@ static void process_sms_task(sms_task_t *task) {
           {NULL, NULL},
       };
       start_local_channel(pvt, "sms", task->sender, vars);
+      delete_from_modem(pvt, task);
       ast_mutex_unlock(&pvt->lock);
     } else {
       ast_log(LOG_WARNING, "[%s] Device not found for SMS delivery\n",
               task->device_id);
     }
     break;
+  }
+}
+
+/*!
+ * \brief Delete a handled SMS from modem storage
+ * \param pvt Device, locked by the caller
+ */
+static void delete_from_modem(struct pvt *pvt, const sms_task_t *task) {
+  if (task->delete_index == -1U) {
+    return;
+  }
+  if (at_enqueue_delete_sms(&pvt->sys_chan, task->delete_index)) {
+    ast_log(LOG_ERROR, "[%s] Error enqueueing delete of SMS at index %u\n",
+            task->device_id, task->delete_index);
   }
 }
