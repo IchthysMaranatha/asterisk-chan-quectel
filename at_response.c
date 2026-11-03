@@ -26,6 +26,7 @@
 #include "manager.h"
 #include "channel.h"				/* channel_queue_hangup() channel_queue_control() */
 #include "smsdb.h"
+#include "sms_queue.h"
 #include "error.h"
 
 #define CCWA_STATUS_NOT_ACTIVE	0
@@ -1502,14 +1503,10 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 	int mr, st;
 	char		msg[4096];
 	int		res;
-	char		text_base64[40800];
 	size_t		msg_len = sizeof(msg);
 	int tpdu_type;
 	pdu_udh_t	udh;
 	pdu_udh_init(&udh);
-	char fullmsg[160 * 255];
-	int fullmsg_len;
-	int csms_cnt;
 	char buf[512];
 	char payload[SMSDB_PAYLOAD_MAX_LEN];
 	ssize_t payload_len;
@@ -1560,42 +1557,15 @@ static int at_response_cmgr (struct pvt* pvt, const char * str, size_t len)
 				break;
 			case PDUTYPE_MTI_SMS_DELIVER:
 				ast_debug (1, "[%s] Successfully read SM\n", PVT_ID(pvt));
-				if (udh.parts > 1) {
-					ast_verb (1, "[%s] Got SM part from %s: '%s'; [ref=%d, parts=%d, order=%d]\n", PVT_ID(pvt), oa, msg, udh.ref, udh.parts, udh.order);
-					csms_cnt = smsdb_put(pvt->imsi, oa, udh.ref, udh.parts, udh.order, msg, fullmsg);
-					if (csms_cnt <= 0) {
-						ast_log(LOG_ERROR, "[%s] Error putting SMS to SMSDB\n", PVT_ID(pvt));
-						goto receive_as_is;
-					}
-					if (csms_cnt < udh.parts) {
-						ast_verb (1, "[%s] Waiting for following parts\n", PVT_ID(pvt));
-						goto receive_next;
-					}
-					fullmsg_len = strlen(fullmsg);
-				} else {
-receive_as_is:
-					ast_verb (1, "[%s] Got single SM from %s: '%s'\n", PVT_ID(pvt), oa, msg);
-					strncpy(fullmsg, msg, msg_len);
-					fullmsg[msg_len] = '\0';
-					fullmsg_len = msg_len;
+				ast_verb (1, "[%s] Got SM part from %s: '%s'; [ref=%d, parts=%d, order=%d]\n", PVT_ID(pvt), oa, msg, udh.ref, udh.parts, udh.order);
+				/* SMSDB access and delivery run in the SMS queue thread so a
+				 * slow or locked database does not stall the monitor loop */
+				if (sms_queue_put(pvt->imsi, PVT_ID(pvt), oa, scts, udh.ref, udh.parts, udh.order, msg,
+						CONF_SHARED(pvt, autodeletesms) ? pvt->incoming_sms_index : -1U) != 0) {
+					ast_log(LOG_ERROR, "[%s] Failed to queue SMS for async processing, leaving it on the modem\n", PVT_ID(pvt));
 				}
-
-				ast_verb (1, "[%s] Got full SMS from %s: '%s'\n", PVT_ID(pvt), oa, fullmsg);
-				ast_base64encode (text_base64, (unsigned char*)fullmsg, fullmsg_len, sizeof(text_base64));
-
-				manager_event_new_sms(PVT_ID(pvt), oa, fullmsg);
-				manager_event_new_sms_base64(PVT_ID(pvt), oa, text_base64);
-				{
-					channel_var_t vars[] =
-					{
-						{ "SMS", fullmsg } ,
-						{ "SMS_BASE64", text_base64 },
-						{ "SMS_TS", scts },
-						{ NULL, NULL },
-					};
-					start_local_channel (pvt, "sms", oa, vars);
-				}
-				break;
+				/* the SMS queue deletes the message once it is stored or delivered */
+				goto receive_next_no_delete;
 			}
 		}
 		else
@@ -1603,7 +1573,6 @@ receive_as_is:
 			ast_log (LOG_ERROR, "[%s] Received '+CMGR' when expecting '%s' response to '%s', ignoring\n", PVT_ID(pvt),
 					at_res2str (ecmd->res), at_cmd2str (ecmd->cmd));
 		}
-receive_next:
 		if (CONF_SHARED(pvt, autodeletesms) && pvt->incoming_sms_index != -1U)
 		{
 			at_enqueue_delete_sms(&pvt->sys_chan, pvt->incoming_sms_index);
